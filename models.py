@@ -8,13 +8,17 @@ class DenseLayer(object):
                num_inputs, 
                num_outputs, 
                activation=None, 
+               bias_initializer=tf.zeros_initializer,
+               weight_initializer=tf.glorot_uniform_initializer,
                name="dense_layer"):
     self.num_inputs = num_inputs
     self.num_outputs = num_outputs
     self.activation = activation
     with tf.variable_scope(name):
-      self.W = tf.get_variable(name="W", shape=[num_outputs, num_inputs])
-      self.b = tf.get_variable(name="b", shape=[num_outputs])
+      self.W = tf.get_variable(name="W", shape=[num_outputs, num_inputs],
+              initializer=weight_initializer)
+      self.b = tf.get_variable(name="b", shape=[num_outputs], 
+              initializer=bias_initializer)
   
   def __call__(self, x):
     batch_size, input_dim = x.get_shape().as_list()
@@ -36,17 +40,21 @@ class ResBlock(object):
       self.layer1 = DenseLayer(num_inputs, 
                                num_outputs, 
                                activation=tf.nn.relu, 
-                               name="layer1")
+                               name="layer1",
+                               weight_initializer=tf.variance_scaling_initializer(
+                                   scale=2.0, distribution="normal"))
       self.layer2 = DenseLayer(num_inputs, 
                                num_outputs, 
                                activation=None, 
-                               name="layer2")
+                               name="layer2",
+                               weight_initializer=tf.variance_scaling_initializer(
+                                   scale=0.1, distribution="normal"))
       
-  def __call__(self, x):
-    x1 = tf.nn.relu(x)
-    x2 = self.layer1(x1)
-    x3 = self.layer2(x2)
-    return x + x3
+  def __call__(self, in_x):
+    residual = tf.nn.relu(in_x)
+    residual = self.layer1(residual)
+    residual = self.layer2(residual)
+    return in_x + residual
   
 
 class MaskedDenseLayer(DenseLayer):
@@ -57,6 +65,8 @@ class MaskedDenseLayer(DenseLayer):
                data_dim, 
                activation=None, 
                mask_type="hidden", 
+               bias_initializer=tf.zeros_initializer,
+               weight_initializer=tf.glorot_normal_initializer,
                name="masked_layer"):
     self.data_dim = data_dim
     self.mask_type = mask_type
@@ -76,12 +86,14 @@ class MaskedDenseLayer(DenseLayer):
       in_degrees = (tf.range(num_inputs) % max_degree) + 1
       out_degrees = tf.tile(tf.range(data_dim) + 1, [int(num_outputs/data_dim)])
     self.mask = tf.cast(out_degrees[:,tf.newaxis] >= in_degrees, tf.float32)
-    super().__init__(num_inputs, num_outputs, activation=activation, name=name)
+    super().__init__(num_inputs, num_outputs, activation=activation,
+            bias_initializer=bias_initializer, weight_initializer=weight_initializer, name=name)
     
   def __call__(self, x):
     batch_size, input_dim = x.get_shape().as_list()
     assert input_dim == self.num_inputs
     out = tf.linalg.matmul(x, self.W*self.mask, transpose_b=True) + self.b[tf.newaxis,:]
+    #out = tf.linalg.matmul(x, self.W, transpose_b=True) + self.b[tf.newaxis,:]
     if self.activation is not None:
       out = self.activation(out)
     return out
@@ -100,25 +112,34 @@ class MaskedResBlock(ResBlock):
                                      num_outputs, 
                                      data_dim, 
                                      activation=tf.nn.relu, 
-                                     mask_type="hidden", 
+                                     mask_type="hidden",
+                                     weight_initializer=tf.variance_scaling_initializer(
+                                         scale=2.0, distribution="normal"),
                                      name="layer1")
       self.layer2 = MaskedDenseLayer(num_inputs, 
                                      num_outputs, 
                                      data_dim, 
                                      activation=None, 
                                      mask_type="hidden", 
+                                     weight_initializer=tf.variance_scaling_initializer(
+                                         scale=0.1, distribution="normal"),
                                      name="layer2")
       
   
 class ResMADE(object):
 
-  def __init__(self, data_dim, num_hidden_units, num_outputs_per_dim, num_res_blocks, name="resmade"):
+  def __init__(self, 
+               data_dim, 
+               num_hidden_units, 
+               num_outputs_per_dim, 
+               num_res_blocks, 
+               name="resmade"):
     self.num_outputs_per_dim = num_outputs_per_dim
     with tf.variable_scope("resmade"):
       self.first_layer = MaskedDenseLayer(data_dim, 
                                      num_hidden_units, 
                                      data_dim, 
-                                     activation=tf.nn.relu, 
+                                     activation=None, 
                                      mask_type="input", 
                                      name="first_layer")
       self.inner_layers = [
@@ -133,6 +154,7 @@ class ResMADE(object):
                                           data_dim, 
                                           activation=None, 
                                           mask_type="output", 
+                                          bias_initializer=tf.glorot_normal_initializer,
                                           name="final_layer")
 
   def __call__(self, x):
@@ -140,6 +162,7 @@ class ResMADE(object):
     x = self.first_layer(x)
     for layer in self.inner_layers:
       x = layer(x)
+    x = tf.nn.relu(x)
     out = self.final_layer(x)
     return tf.reshape(out, [batch_size, data_dim, self.num_outputs_per_dim])
   
@@ -169,6 +192,7 @@ class ENN(object):
     x = self.first_layer(x)
     for layer in self.inner_layers:
       x = layer(x)
+    x = tf.nn.relu(x)
     out = self.final_layer(x)
     return tf.reshape(out, [batch_size, data_dim])
   
@@ -188,8 +212,15 @@ class AEM(object):
     self.num_importance_samples = num_importance_samples
     with tf.variable_scope("aem"):
       num_outputs_per_dim = context_dim + 3*q_num_mixture_comps
-      self.arnn_net = ResMADE(data_dim, arnn_num_hidden_units, num_outputs_per_dim, arnn_num_res_blocks, name="arnn")
-      self.enn_net = ENN(context_dim+1, enn_num_hidden_units, enn_num_res_blocks, name="enn")
+      self.arnn_net = ResMADE(data_dim, 
+                              arnn_num_hidden_units, 
+                              num_outputs_per_dim, 
+                              arnn_num_res_blocks, 
+                              name="arnn")
+      self.enn_net = ENN(context_dim + 1, 
+                         enn_num_hidden_units, 
+                         enn_num_res_blocks, 
+                         name="enn")
   
   def arnn(self, x):
     batch_size, data_dim = x.get_shape().as_list()
@@ -225,7 +256,7 @@ class AEM(object):
     sample_log_energies = log_energies[0:nis,:,:] # [num_importance_samples, batch_size, data_dim]
     data_log_energies = log_energies[nis,:,:] # [batch_size, data_dim]
     # [batch_size, data_dim]
-    log_Z_hat = tf.stop_gradient(tf.math.reduce_logsumexp(sample_log_energies - sample_log_q, axis=0) - tf.log(tf.to_float(nis)))
+    log_Z_hat = tf.math.reduce_logsumexp(sample_log_energies - sample_log_q, axis=0) - tf.log(tf.to_float(nis))
     log_p_hat = tf.math.reduce_sum(data_log_energies - log_Z_hat, axis=-1) # [batch_size]
     log_q_data = tf.math.reduce_sum(q.log_prob(x), axis=-1) # [batch_size]
     return log_p_hat, log_q_data

@@ -1,4 +1,4 @@
-import math
+
 import os
 import numpy as np
 from matplotlib import cm
@@ -58,7 +58,7 @@ def make_log_hooks(global_step, loss):
   hooks.append(loss_hook)
   if len(tf.get_collection("infrequent_summaries")) > 0:
     infrequent_summary_hook = tf.train.SummarySaverHook(
-        save_steps=1000,
+        save_steps=300,
         output_dir=FLAGS.logdir,
         summary_op=tf.summary.merge_all(key="infrequent_summaries")
     )
@@ -69,12 +69,19 @@ def make_density_image_summary(num_pts, bounds, model):
   x = tf.range(bounds[0], bounds[1], delta=(bounds[1]-bounds[0])/float(num_pts))
   X, Y = tf.meshgrid(x, x)
   XY = tf.reshape(tf.stack([X,Y], axis=-1), [num_pts**2, 2])
-  log_p_hat, _ = model.log_p(XY, num_importance_samples=20)
-  density = tf.reshape(tf.exp(log_p_hat), [num_pts, num_pts])
-  density = (density - tf.reduce_min(density))/(tf.reduce_max(density) - tf.reduce_min(density))
+  log_p_hat, log_q = model.log_p(XY, num_importance_samples=20)
+  density_p = tf.reshape(tf.exp(log_p_hat), [num_pts, num_pts])
+  density_p = (density_p - tf.reduce_min(density_p))/(tf.reduce_max(density_p) -
+          tf.reduce_min(density_p))
+  density_q = tf.reshape(tf.exp(log_q), [num_pts, num_pts])
+  density_q = (density_q - tf.reduce_min(density_q))/(tf.reduce_max(density_q) -
+          tf.reduce_min(density_q))
+
   tf_viridis = lambda x: tf.py_func(cm.get_cmap('viridis'), [x], [tf.float64])
-  density_plot = tf_viridis(density)
-  tf.summary.image("density", density_plot, max_outputs=1, collections=["infrequent_summaries"])
+  density_p_plot = tf_viridis(density_p)
+  tf.summary.image("p_density", density_p_plot, max_outputs=1, collections=["infrequent_summaries"])
+  density_q_plot = tf_viridis(density_q)
+  tf.summary.image("q_density", density_q_plot, max_outputs=1, collections=["infrequent_summaries"])
 
 def main(unused_argv):
   g = tf.Graph()
@@ -91,13 +98,18 @@ def main(unused_argv):
                        num_importance_samples=FLAGS.num_importance_samples,
                        q_num_mixture_comps=FLAGS.q_num_mixture_components, 
                        q_min_scale=1e-3)
-    loss = model.loss(data)
+    log_p, log_q = model.log_p(data)
+    tf.summary.scalar("log_p", tf.reduce_mean(log_p))
+    tf.summary.scalar("log_q", tf.reduce_mean(log_q))
+    loss = -tf.reduce_mean(log_p + log_q)
     tf.summary.scalar("loss", loss)
     make_density_image_summary(FLAGS.density_num_bins, (-2,2), model)
     global_step = tf.train.get_or_create_global_step()
-    opt = tf.train.AdamOptimizer(learning_rate=FLAGS.learning_rate)
-    grads = opt.compute_gradients(-loss)
-    train_op = opt.apply_gradients(grads, global_step=global_step)
+    learning_rate = tf.train.cosine_decay(FLAGS.learning_rate, 
+            global_step, FLAGS.max_steps, name=None)
+    tf.summary.scalar("learning_rate", learning_rate)
+    opt = tf.train.AdamOptimizer(learning_rate=learning_rate)
+    train_op = opt.minimize(loss, global_step=global_step)
     log_hooks = make_log_hooks(global_step, loss) 
 
     with tf.train.MonitoredTrainingSession(
