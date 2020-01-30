@@ -77,15 +77,17 @@ class MaskedDenseLayer(DenseLayer):
     if mask_type == "hidden":
       in_degrees = (tf.range(num_inputs) % max_degree) + 1
       out_degrees = (tf.range(num_outputs) % max_degree) + 1
+      self.mask = tf.cast(out_degrees[:,tf.newaxis] >= in_degrees, tf.float32)
     elif mask_type == "input":
       assert num_inputs == data_dim, "For an input layer the num inputs and data dim must match."
       in_degrees = tf.range(num_inputs) + 1
       out_degrees = (tf.range(num_outputs) % max_degree) + 1
+      self.mask = tf.cast(out_degrees[:,tf.newaxis] >= in_degrees, tf.float32)
     elif mask_type == "output":
       assert num_outputs % data_dim == 0, "For output layers, num_outputs must be a multiple of data_dim."
       in_degrees = (tf.range(num_inputs) % max_degree) + 1
       out_degrees = tf.tile(tf.range(data_dim) + 1, [int(num_outputs/data_dim)])
-    self.mask = tf.cast(out_degrees[:,tf.newaxis] >= in_degrees, tf.float32)
+      self.mask = tf.cast(out_degrees[:,tf.newaxis] > in_degrees, tf.float32)
     super().__init__(num_inputs, num_outputs, activation=activation,
             bias_initializer=bias_initializer, weight_initializer=weight_initializer, name=name)
     
@@ -164,26 +166,27 @@ class ResMADE(object):
       x = layer(x)
     x = tf.nn.relu(x)
     out = self.final_layer(x)
-    return tf.reshape(out, [batch_size, data_dim, self.num_outputs_per_dim])
+    reshaped =  tf.reshape(out, [batch_size, self.num_outputs_per_dim, data_dim])
+    return tf.transpose(reshaped, [0,2,1])
   
   
 class ENN(object):
 
   def __init__(self, data_dim, num_hidden_units, num_res_blocks, name="enn"):
     with tf.variable_scope("enn"):
-      self.first_layer = DenseLayer(data_dim, 
-                                    num_hidden_units, 
-                                    activation=tf.nn.relu, 
+      self.first_layer = DenseLayer(data_dim,
+                                    num_hidden_units,
+                                    activation=None,
                                     name="first_layer")
       self.inner_layers = [
         ResBlock(num_hidden_units,
-                 num_hidden_units, 
-                 name="block%d" % (i+1)) 
+                 num_hidden_units,
+                 name="block%d" % (i+1))
         for i in range(num_res_blocks)
       ]
-      self.final_layer = DenseLayer(num_hidden_units, 
-                                    1, 
-                                    activation=lambda a: -tf.nn.softplus(a), 
+      self.final_layer = DenseLayer(num_hidden_units,
+                                    1,
+                                    activation=lambda a: -tf.nn.softplus(a),
                                     name="final_layer")
 
   def __call__(self, x):
@@ -199,12 +202,12 @@ class ENN(object):
   
 class AEM(object):
   
-  def __init__(self, 
+  def __init__(self,
                data_dim,
-               arnn_num_hidden_units, arnn_num_res_blocks, context_dim, 
-               enn_num_hidden_units, enn_num_res_blocks, 
+               arnn_num_hidden_units, arnn_num_res_blocks, context_dim,
+               enn_num_hidden_units, enn_num_res_blocks,
                num_importance_samples,
-               q_num_mixture_comps, 
+               q_num_mixture_comps,
                q_min_scale=1e-3):
     self.context_dim = context_dim
     self.num_mixture_comps = q_num_mixture_comps
@@ -212,14 +215,14 @@ class AEM(object):
     self.num_importance_samples = num_importance_samples
     with tf.variable_scope("aem"):
       num_outputs_per_dim = context_dim + 3*q_num_mixture_comps
-      self.arnn_net = ResMADE(data_dim, 
-                              arnn_num_hidden_units, 
-                              num_outputs_per_dim, 
-                              arnn_num_res_blocks, 
+      self.arnn_net = ResMADE(data_dim,
+                              arnn_num_hidden_units,
+                              num_outputs_per_dim,
+                              arnn_num_res_blocks,
                               name="arnn")
-      self.enn_net = ENN(context_dim + 1, 
-                         enn_num_hidden_units, 
-                         enn_num_res_blocks, 
+      self.enn_net = ENN(context_dim + 1,
+                         enn_num_hidden_units,
+                         enn_num_res_blocks,
                          name="enn")
   
   def arnn(self, x):
@@ -237,7 +240,7 @@ class AEM(object):
       components = [tfd.Normal(loc=mixture_means[:,:,i], scale=mixture_scales[:,:,i]) for i in range(self.num_mixture_comps)]
     )
     return contexts, q
-  
+
   def log_p(self, x, num_importance_samples=None):
     if num_importance_samples is None:
       nis = self.num_importance_samples
