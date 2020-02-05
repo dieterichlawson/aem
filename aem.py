@@ -11,12 +11,12 @@ tfd = tfp.distributions
 import dists
 import models.aem as aem
 import models.eim as eim
-
+import models.aem_score as aem_score
 
 tf.logging.set_verbosity(tf.logging.INFO)
 tf.app.flags.DEFINE_enum("target", dists.NINE_GAUSSIANS_DIST,  dists.TARGET_DISTS,
                          "Distribution to draw data from.")
-tf.app.flags.DEFINE_enum("model", "aem",  ["aem", "eim"],
+tf.app.flags.DEFINE_enum("model", "aem",  ["aem", "eim", "aem_score"],
                          "Model to train.")
 tf.app.flags.DEFINE_integer("arnn_num_hidden_units", 256,
                              "Number of hidden units per layer on the ARNN.")
@@ -38,8 +38,6 @@ tf.app.flags.DEFINE_integer("batch_size", 256,
                              "The number of examples per batch.")
 tf.app.flags.DEFINE_integer("density_num_bins", 50,
                             "Number of points per axis when plotting density.")
-tf.app.flags.DEFINE_integer("density_num_samples", 100000,
-                            "Number of samples to use when plotting density.")
 tf.app.flags.DEFINE_string("logdir", "/tmp/aem",
                             "Directory for summaries and checkpoints.")
 tf.app.flags.DEFINE_integer("max_steps", int(1e6),
@@ -62,7 +60,7 @@ def make_log_hooks(global_step, loss):
   hooks.append(loss_hook)
   if len(tf.get_collection("infrequent_summaries")) > 0:
     infrequent_summary_hook = tf.train.SummarySaverHook(
-        save_steps=300,
+        save_steps=FLAGS.summarize_every*3,
         output_dir=FLAGS.logdir,
         summary_op=tf.summary.merge_all(key="infrequent_summaries")
     )
@@ -90,6 +88,13 @@ def make_density_image_summary(num_pts, bounds, model):
   elif FLAGS.model == "eim":
     log_p_hat = model.log_p(XY, num_importance_samples=100, summarize=False)
     density_p = tf.reshape(tf.exp(log_p_hat), [num_pts, num_pts])
+    density_p = (density_p - tf.reduce_min(density_p))/(tf.reduce_max(density_p) -
+            tf.reduce_min(density_p))
+    density_p_plot = tf_viridis(density_p)
+    tf.summary.image("p_density", density_p_plot, max_outputs=1, collections=["infrequent_summaries"])
+  elif FLAGS.model == "aem_score":
+    log_energy = model.log_energy(XY, summarize=False)
+    density_p = tf.reshape(tf.exp(log_energy), [num_pts, num_pts])
     density_p = (density_p - tf.reduce_min(density_p))/(tf.reduce_max(density_p) -
             tf.reduce_min(density_p))
     density_p_plot = tf_viridis(density_p)
@@ -122,6 +127,13 @@ def main(unused_argv):
                       enn_num_res_blocks=FLAGS.enn_num_res_blocks, 
                       num_importance_samples=FLAGS.num_importance_samples,
                       q_min_scale=1e-3)
+    elif FLAGS.model == "aem_score":
+      model = aem_score.AEMScore(data_dim,
+                      arnn_num_hidden_units=FLAGS.arnn_num_hidden_units, 
+                      arnn_num_res_blocks=FLAGS.arnn_num_res_blocks, 
+                      context_dim=FLAGS.context_dim, 
+                      enn_num_hidden_units=FLAGS.enn_num_hidden_units, 
+                      enn_num_res_blocks=FLAGS.enn_num_res_blocks)
 
     loss = model.loss(data, summarize=True)
     tf.summary.scalar("loss", loss)
@@ -132,7 +144,7 @@ def main(unused_argv):
     tf.summary.scalar("learning_rate", learning_rate)
     opt = tf.train.AdamOptimizer(learning_rate=learning_rate)
     train_op = opt.minimize(loss, global_step=global_step)
-    log_hooks = make_log_hooks(global_step, loss) 
+    log_hooks = make_log_hooks(global_step, loss)
 
     with tf.train.MonitoredTrainingSession(
         master="",
