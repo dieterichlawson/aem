@@ -9,11 +9,15 @@ import tensorflow_probability as tfp
 tfd = tfp.distributions
 
 import dists
-import models
+import models.aem as aem
+import models.eim as eim
+
 
 tf.logging.set_verbosity(tf.logging.INFO)
 tf.app.flags.DEFINE_enum("target", dists.NINE_GAUSSIANS_DIST,  dists.TARGET_DISTS,
                          "Distribution to draw data from.")
+tf.app.flags.DEFINE_enum("model", "aem",  ["aem", "eim"],
+                         "Model to train.")
 tf.app.flags.DEFINE_integer("arnn_num_hidden_units", 256,
                              "Number of hidden units per layer on the ARNN.")
 tf.app.flags.DEFINE_integer("arnn_num_res_blocks", 4,
@@ -69,19 +73,28 @@ def make_density_image_summary(num_pts, bounds, model):
   x = tf.range(bounds[0], bounds[1], delta=(bounds[1]-bounds[0])/float(num_pts))
   X, Y = tf.meshgrid(x, x)
   XY = tf.reshape(tf.stack([X,Y], axis=-1), [num_pts**2, 2])
-  log_p_hat, log_q = model.log_p(XY, num_importance_samples=20)
-  density_p = tf.reshape(tf.exp(log_p_hat), [num_pts, num_pts])
-  density_p = (density_p - tf.reduce_min(density_p))/(tf.reduce_max(density_p) -
-          tf.reduce_min(density_p))
-  density_q = tf.reshape(tf.exp(log_q), [num_pts, num_pts])
-  density_q = (density_q - tf.reduce_min(density_q))/(tf.reduce_max(density_q) -
-          tf.reduce_min(density_q))
-
   tf_viridis = lambda x: tf.py_func(cm.get_cmap('viridis'), [x], [tf.float64])
-  density_p_plot = tf_viridis(density_p)
-  tf.summary.image("p_density", density_p_plot, max_outputs=1, collections=["infrequent_summaries"])
-  density_q_plot = tf_viridis(density_q)
-  tf.summary.image("q_density", density_q_plot, max_outputs=1, collections=["infrequent_summaries"])
+  if FLAGS.model == "aem":
+    log_p_hat, log_q = model.log_p(XY, num_importance_samples=100, summarize=False)
+    density_p = tf.reshape(tf.exp(log_p_hat), [num_pts, num_pts])
+    density_p = (density_p - tf.reduce_min(density_p))/(tf.reduce_max(density_p) -
+            tf.reduce_min(density_p))
+    density_q = tf.reshape(tf.exp(log_q), [num_pts, num_pts])
+    density_q = (density_q - tf.reduce_min(density_q))/(tf.reduce_max(density_q) -
+            tf.reduce_min(density_q))
+
+    density_p_plot = tf_viridis(density_p)
+    density_q_plot = tf_viridis(density_q)
+    tf.summary.image("p_density", density_p_plot, max_outputs=1, collections=["infrequent_summaries"])
+    tf.summary.image("q_density", density_q_plot, max_outputs=1, collections=["infrequent_summaries"])
+  elif FLAGS.model == "eim":
+    log_p_hat = model.log_p(XY, num_importance_samples=100, summarize=False)
+    density_p = tf.reshape(tf.exp(log_p_hat), [num_pts, num_pts])
+    density_p = (density_p - tf.reduce_min(density_p))/(tf.reduce_max(density_p) -
+            tf.reduce_min(density_p))
+    density_p_plot = tf_viridis(density_p)
+    tf.summary.image("p_density", density_p_plot, max_outputs=1, collections=["infrequent_summaries"])
+
 
 def main(unused_argv):
   g = tf.Graph()
@@ -89,19 +102,28 @@ def main(unused_argv):
 
     data = dists.get_target_distribution(FLAGS.target).sample(FLAGS.batch_size)
     _, data_dim = data.get_shape().as_list()
-    model = models.AEM(data_dim,
-                       arnn_num_hidden_units=FLAGS.arnn_num_hidden_units, 
-                       arnn_num_res_blocks=FLAGS.arnn_num_res_blocks, 
-                       context_dim=FLAGS.context_dim, 
-                       enn_num_hidden_units=FLAGS.enn_num_hidden_units, 
-                       enn_num_res_blocks=FLAGS.enn_num_res_blocks, 
-                       num_importance_samples=FLAGS.num_importance_samples,
-                       q_num_mixture_comps=FLAGS.q_num_mixture_components, 
-                       q_min_scale=1e-3)
-    log_p, log_q = model.log_p(data)
-    tf.summary.scalar("log_p", tf.reduce_mean(log_p))
-    tf.summary.scalar("log_q", tf.reduce_mean(log_q))
-    loss = -tf.reduce_mean(log_p + log_q)
+
+    if FLAGS.model == "aem":
+      model = aem.AEM(data_dim,
+                      arnn_num_hidden_units=FLAGS.arnn_num_hidden_units, 
+                      arnn_num_res_blocks=FLAGS.arnn_num_res_blocks, 
+                      context_dim=FLAGS.context_dim, 
+                      enn_num_hidden_units=FLAGS.enn_num_hidden_units, 
+                      enn_num_res_blocks=FLAGS.enn_num_res_blocks, 
+                      num_importance_samples=FLAGS.num_importance_samples,
+                      q_num_mixture_comps=FLAGS.q_num_mixture_components, 
+                      q_min_scale=1e-3)
+    elif FLAGS.model == "eim":
+      model = eim.EIM(data_dim,
+                      arnn_num_hidden_units=FLAGS.arnn_num_hidden_units, 
+                      arnn_num_res_blocks=FLAGS.arnn_num_res_blocks, 
+                      context_dim=FLAGS.context_dim, 
+                      enn_num_hidden_units=FLAGS.enn_num_hidden_units, 
+                      enn_num_res_blocks=FLAGS.enn_num_res_blocks, 
+                      num_importance_samples=FLAGS.num_importance_samples,
+                      q_min_scale=1e-3)
+
+    loss = model.loss(data, summarize=True)
     tf.summary.scalar("loss", loss)
     make_density_image_summary(FLAGS.density_num_bins, (-2,2), model)
     global_step = tf.train.get_or_create_global_step()
