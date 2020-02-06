@@ -27,6 +27,7 @@ class AEM(object):
       self.enn_net = base.ENN(context_dim + 1,
                          enn_num_hidden_units,
                          enn_num_res_blocks,
+                         final_activation=lambda x: -tf.nn.softplus(x),
                          name="enn")
   
   def arnn(self, x):

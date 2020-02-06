@@ -172,7 +172,12 @@ class ResMADE(object):
   
 class ENN(object):
 
-  def __init__(self, data_dim, num_hidden_units, num_res_blocks, name="enn"):
+  def __init__(self, 
+          data_dim, 
+          num_hidden_units, 
+          num_res_blocks, 
+          final_activation=None,
+          name="enn"):
     with tf.variable_scope("enn"):
       self.first_layer = DenseLayer(data_dim,
                                     num_hidden_units,
@@ -186,7 +191,7 @@ class ENN(object):
       ]
       self.final_layer = DenseLayer(num_hidden_units,
                                     1,
-                                    activation=lambda a: -tf.nn.softplus(a),
+                                    activation=final_activation,
                                     name="final_layer")
 
   def __call__(self, x):
