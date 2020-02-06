@@ -38,6 +38,8 @@ tf.app.flags.DEFINE_integer("batch_size", 256,
                              "The number of examples per batch.")
 tf.app.flags.DEFINE_integer("density_num_bins", 50,
                             "Number of points per axis when plotting density.")
+tf.app.flags.DEFINE_string("tag", "aem",
+                            "Name for the run.")
 tf.app.flags.DEFINE_string("logdir", "/tmp/aem",
                             "Directory for summaries and checkpoints.")
 tf.app.flags.DEFINE_integer("max_steps", int(1e6),
@@ -47,6 +49,20 @@ tf.app.flags.DEFINE_integer("summarize_every", int(1e3),
 FLAGS = tf.app.flags.FLAGS
 
 tf_viridis = lambda x: tf.py_func(cm.get_cmap('viridis'), [x], [tf.float64])
+
+
+def make_slug():
+  d = {
+          "model": FLAGS.model,
+          "cdim": FLAGS.context_dim,
+          "arnn_units": FLAGS.arnn_num_hidden_units,
+          "arnn_blocks": FLAGS.arnn_num_res_blocks,
+          "enn_units": FLAGS.enn_num_hidden_units,
+          "enn_blocks": FLAGS.enn_num_res_blocks,
+          "lr": FLAGS.learning_rate,
+          "bs": FLAGS.batch_size,
+          }
+  return ".".join([FLAGS.tag] + ["%s_%s" % (k,v) for k,v in d.items()])
 
 def make_log_hooks(global_step, loss):
   hooks = []
@@ -145,12 +161,12 @@ def main(unused_argv):
     opt = tf.train.AdamOptimizer(learning_rate=learning_rate)
     train_op = opt.minimize(loss, global_step=global_step)
     log_hooks = make_log_hooks(global_step, loss)
-
+    logdir = os.path.join(FLAGS.logdir, make_slug())
     with tf.train.MonitoredTrainingSession(
         master="",
         is_chief=True,
         hooks=log_hooks,
-        checkpoint_dir=FLAGS.logdir,
+        checkpoint_dir=logdir,
         save_checkpoint_secs=60,
         save_summaries_steps=FLAGS.summarize_every,
         log_step_count_steps=FLAGS.summarize_every) as sess:
