@@ -120,7 +120,7 @@ def make_density_image_summary(num_pts, bounds, model):
 
 def main(unused_argv):
   tf.debugging.set_log_device_placement(True)
-  with tf.device('/CPU:0'):
+  with tf.device('/GPU:0'):
     g = tf.Graph()
     with g.as_default():
 

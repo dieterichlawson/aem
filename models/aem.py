@@ -37,14 +37,18 @@ class AEM(object):
     contexts = arnn_net_outs[:,:,0:cd]
     # Construct the mixture
     mixture_weights = tf.nn.softmax(arnn_net_outs[:,:,cd:cd + self.num_mixture_comps], axis=-1)
-    print(mixture_weights)
     mixture_means = arnn_net_outs[:,:,cd + self.num_mixture_comps: cd + self.num_mixture_comps*2]
     mixture_raw_scales = arnn_net_outs[:,:,cd + self.num_mixture_comps*2:]
     mixture_scales = tf.nn.softplus(mixture_raw_scales) + self.min_scale
-    q = tfd.Mixture(
-      cat=tfd.Categorical(probs=mixture_weights),
-      components = [tfd.Normal(loc=mixture_means[:,:,i], scale=mixture_scales[:,:,i]) for i in range(self.num_mixture_comps)]
-    )
+    if self.num_mixture_comps > 1:
+      q = tfd.Mixture(
+        cat=tfd.Categorical(probs=mixture_weights),
+        components = [tfd.Normal(loc=mixture_means[:,:,i], scale=mixture_scales[:,:,i]) for i in range(self.num_mixture_comps)]
+      )
+    else:
+      mixture_means = tf.reshape(mixture_means, [batch_size, data_dim])
+      mixture_scales = tf.reshape(mixture_scales, [batch_size, data_dim])
+      q = tfd.Normal(loc=mixture_means, scale=mixture_scales)
     return contexts, q
 
   def log_p(self, x, num_importance_samples=None, summarize=True):
