@@ -51,19 +51,21 @@ tf_viridis = lambda x: tf.py_func(cm.get_cmap('viridis'), [x], [tf.float64])
 
 
 def make_slug():
-  d = {
-          "model": FLAGS.model,
-          "cdim": FLAGS.context_dim,
-          "arnn_units": FLAGS.arnn_num_hidden_units,
-          "arnn_blocks": FLAGS.arnn_num_res_blocks,
-          "enn_units": FLAGS.enn_num_hidden_units,
-          "enn_blocks": FLAGS.enn_num_res_blocks,
-          "lr": FLAGS.learning_rate,
-          "bs": FLAGS.batch_size,
-          }
-  return ".".join([FLAGS.tag] + ["%s_%s" % (k,v) for k,v in d.items()])
+  d =[("model", FLAGS.model),
+      ("cdim", FLAGS.context_dim),
+      ("arnn_units", FLAGS.arnn_num_hidden_units),
+      ("arnn_blocks", FLAGS.arnn_num_res_blocks),
+      ("enn_units", FLAGS.enn_num_hidden_units),
+      ("enn_blocks", FLAGS.enn_num_res_blocks),
+      ("lr", FLAGS.learning_rate),
+      ("bs", FLAGS.batch_size)]
+  if FLAGS.model == "aem":
+    d.append(("q_num_comps", FLAGS.q_num_mixture_components))
+  if FLAGS.model in ["aem", "eim"]:
+    d.append(("num_samples", FLAGS.num_importance_samples))
+  return ".".join([FLAGS.tag] + ["%s_%s" % (k,v) for k,v in d])
 
-def make_log_hooks(global_step, loss):
+def make_log_hooks(global_step, loss, logdir):
   hooks = []
 
   def summ_formatter(d):
@@ -76,7 +78,7 @@ def make_log_hooks(global_step, loss):
   if len(tf.get_collection("infrequent_summaries")) > 0:
     infrequent_summary_hook = tf.train.SummarySaverHook(
         save_steps=FLAGS.summarize_every*3,
-        output_dir=FLAGS.logdir,
+        output_dir=logdir,
         summary_op=tf.summary.merge_all(key="infrequent_summaries")
     )
     hooks.append(infrequent_summary_hook)
@@ -117,64 +119,66 @@ def make_density_image_summary(num_pts, bounds, model):
 
 
 def main(unused_argv):
-  g = tf.Graph()
-  with g.as_default():
+  tf.debugging.set_log_device_placement(True)
+  with tf.device('/CPU:0'):
+    g = tf.Graph()
+    with g.as_default():
 
-    data = dists.get_target_distribution(FLAGS.target).sample(FLAGS.batch_size)
-    _, data_dim = data.get_shape().as_list()
+      data = dists.get_target_distribution(FLAGS.target).sample(FLAGS.batch_size)
+      _, data_dim = data.get_shape().as_list()
 
-    if FLAGS.model == "aem":
-      model = aem.AEM(data_dim,
-                      arnn_num_hidden_units=FLAGS.arnn_num_hidden_units, 
-                      arnn_num_res_blocks=FLAGS.arnn_num_res_blocks, 
-                      context_dim=FLAGS.context_dim, 
-                      enn_num_hidden_units=FLAGS.enn_num_hidden_units, 
-                      enn_num_res_blocks=FLAGS.enn_num_res_blocks, 
-                      num_importance_samples=FLAGS.num_importance_samples,
-                      q_num_mixture_comps=FLAGS.q_num_mixture_components, 
-                      q_min_scale=1e-3)
-    elif FLAGS.model == "eim":
-      model = eim.EIM(data_dim,
-                      arnn_num_hidden_units=FLAGS.arnn_num_hidden_units, 
-                      arnn_num_res_blocks=FLAGS.arnn_num_res_blocks, 
-                      context_dim=FLAGS.context_dim, 
-                      enn_num_hidden_units=FLAGS.enn_num_hidden_units, 
-                      enn_num_res_blocks=FLAGS.enn_num_res_blocks, 
-                      num_importance_samples=FLAGS.num_importance_samples,
-                      q_min_scale=1e-3)
-    elif FLAGS.model == "aem_score":
-      model = aem_score.AEMScore(data_dim,
-                      arnn_num_hidden_units=FLAGS.arnn_num_hidden_units, 
-                      arnn_num_res_blocks=FLAGS.arnn_num_res_blocks, 
-                      context_dim=FLAGS.context_dim, 
-                      enn_num_hidden_units=FLAGS.enn_num_hidden_units, 
-                      enn_num_res_blocks=FLAGS.enn_num_res_blocks)
+      if FLAGS.model == "aem":
+        model = aem.AEM(data_dim,
+                        arnn_num_hidden_units=FLAGS.arnn_num_hidden_units, 
+                        arnn_num_res_blocks=FLAGS.arnn_num_res_blocks, 
+                        context_dim=FLAGS.context_dim, 
+                        enn_num_hidden_units=FLAGS.enn_num_hidden_units, 
+                        enn_num_res_blocks=FLAGS.enn_num_res_blocks, 
+                        num_importance_samples=FLAGS.num_importance_samples,
+                        q_num_mixture_comps=FLAGS.q_num_mixture_components, 
+                        q_min_scale=1e-3)
+      elif FLAGS.model == "eim":
+        model = eim.EIM(data_dim,
+                        arnn_num_hidden_units=FLAGS.arnn_num_hidden_units, 
+                        arnn_num_res_blocks=FLAGS.arnn_num_res_blocks, 
+                        context_dim=FLAGS.context_dim, 
+                        enn_num_hidden_units=FLAGS.enn_num_hidden_units, 
+                        enn_num_res_blocks=FLAGS.enn_num_res_blocks, 
+                        num_importance_samples=FLAGS.num_importance_samples,
+                        q_min_scale=1e-3)
+      elif FLAGS.model == "aem_score":
+        model = aem_score.AEMScore(data_dim,
+                        arnn_num_hidden_units=FLAGS.arnn_num_hidden_units, 
+                        arnn_num_res_blocks=FLAGS.arnn_num_res_blocks, 
+                        context_dim=FLAGS.context_dim, 
+                        enn_num_hidden_units=FLAGS.enn_num_hidden_units, 
+                        enn_num_res_blocks=FLAGS.enn_num_res_blocks)
 
-    loss = model.loss(data, summarize=True)
-    tf.summary.scalar("loss", loss)
-    make_density_image_summary(FLAGS.density_num_bins, (-2,2), model)
-    global_step = tf.train.get_or_create_global_step()
-    learning_rate = tf.train.cosine_decay(FLAGS.learning_rate, 
-            global_step, FLAGS.max_steps, name=None)
-    tf.summary.scalar("learning_rate", learning_rate)
-    opt = tf.train.AdamOptimizer(learning_rate=learning_rate)
-    train_op = opt.minimize(loss, global_step=global_step)
-    log_hooks = make_log_hooks(global_step, loss)
-    logdir = os.path.join(FLAGS.logdir, make_slug())
-    with tf.train.MonitoredTrainingSession(
-        master="",
-        is_chief=True,
-        hooks=log_hooks,
-        checkpoint_dir=logdir,
-        save_checkpoint_secs=60,
-        save_summaries_steps=FLAGS.summarize_every,
-        log_step_count_steps=FLAGS.summarize_every) as sess:
-      cur_step = -1
-      while True:
-        if sess.should_stop() or cur_step > FLAGS.max_steps:
-          break
-        # run a step
-        _, cur_step = sess.run([train_op, global_step])
+      loss = model.loss(data, summarize=True)
+      tf.summary.scalar("loss", loss)
+      make_density_image_summary(FLAGS.density_num_bins, (-2,2), model)
+      global_step = tf.train.get_or_create_global_step()
+      learning_rate = tf.train.cosine_decay(FLAGS.learning_rate, 
+              global_step, FLAGS.max_steps, name=None)
+      tf.summary.scalar("learning_rate", learning_rate)
+      opt = tf.train.AdamOptimizer(learning_rate=learning_rate)
+      train_op = opt.minimize(loss, global_step=global_step)
+      logdir = os.path.join(FLAGS.logdir, make_slug())
+      log_hooks = make_log_hooks(global_step, loss, logdir)
+      with tf.train.MonitoredTrainingSession(
+          master="",
+          is_chief=True,
+          hooks=log_hooks,
+          checkpoint_dir=logdir,
+          save_checkpoint_secs=60,
+          save_summaries_steps=FLAGS.summarize_every,
+          log_step_count_steps=FLAGS.summarize_every) as sess:
+        cur_step = -1
+        while True:
+          if sess.should_stop() or cur_step > FLAGS.max_steps:
+            break
+          # run a step
+          _, cur_step = sess.run([train_op, global_step])
 
 if __name__ == "__main__":
   tf.app.run(main)
