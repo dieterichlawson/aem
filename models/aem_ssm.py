@@ -4,7 +4,7 @@ tfd = tfp.distributions
 
 from . import base
 
-class AEMScore(object):
+class AEMSSM(object):
   
   def __init__(self,
                data_dim,

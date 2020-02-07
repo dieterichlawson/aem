@@ -10,12 +10,12 @@ tfd = tfp.distributions
 import dists
 import models.aem as aem
 import models.eim as eim
-import models.aem_score as aem_score
+import models.aem_ssm as aem_ssm
 
 tf.logging.set_verbosity(tf.logging.INFO)
 tf.app.flags.DEFINE_enum("target", dists.NINE_GAUSSIANS_DIST,  dists.TARGET_DISTS,
                          "Distribution to draw data from.")
-tf.app.flags.DEFINE_enum("model", "aem",  ["aem", "eim", "aem_score"],
+tf.app.flags.DEFINE_enum("model", "aem",  ["aem", "eim", "aem_ssm"],
                          "Model to train.")
 tf.app.flags.DEFINE_integer("arnn_num_hidden_units", 256,
                              "Number of hidden units per layer on the ARNN.")
@@ -116,7 +116,7 @@ def make_density_image_summary(num_pts, bounds, model):
     density_q_plot = tf_viridis(density_q)
     tf.summary.image("q_density", density_q_plot, max_outputs=1, collections=["infrequent_summaries"])
 
-  elif FLAGS.model == "aem_score":
+  elif FLAGS.model == "aem_ssm":
     log_energy = model.log_energy(XY, summarize=False)
     density_p = tf.reshape(tf.exp(log_energy), [num_pts, num_pts])
     density_p = (density_p - tf.reduce_min(density_p))/(tf.reduce_max(density_p) -
@@ -153,8 +153,8 @@ def main(unused_argv):
                         enn_num_res_blocks=FLAGS.enn_num_res_blocks, 
                         num_importance_samples=FLAGS.num_importance_samples,
                         q_min_scale=1e-3)
-      elif FLAGS.model == "aem_score":
-        model = aem_score.AEMScore(data_dim,
+      elif FLAGS.model == "aem_ssm":
+        model = aem_ssm.AEMSSM(data_dim,
                         arnn_num_hidden_units=FLAGS.arnn_num_hidden_units, 
                         arnn_num_res_blocks=FLAGS.arnn_num_res_blocks, 
                         context_dim=FLAGS.context_dim, 
