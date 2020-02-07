@@ -109,6 +109,13 @@ def make_density_image_summary(num_pts, bounds, model):
             tf.reduce_min(density_p))
     density_p_plot = tf_viridis(density_p)
     tf.summary.image("p_density", density_p_plot, max_outputs=1, collections=["infrequent_summaries"])
+    _, q_dist = model.arnn(XY)
+    density_q = tf.reshape(tf.reduce_sum(q_dist.prob(XY), axis=-1), [num_pts, num_pts])
+    density_q = (density_q - tf.reduce_min(density_q))/(tf.reduce_max(density_q) -
+            tf.reduce_min(density_q))
+    density_q_plot = tf_viridis(density_q)
+    tf.summary.image("q_density", density_q_plot, max_outputs=1, collections=["infrequent_summaries"])
+
   elif FLAGS.model == "aem_score":
     log_energy = model.log_energy(XY, summarize=False)
     density_p = tf.reshape(tf.exp(log_energy), [num_pts, num_pts])
