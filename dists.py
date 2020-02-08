@@ -10,10 +10,11 @@ import tensorflow.compat.v1 as tf
 import tensorflow_probability as tfp
 tfd = tfp.distributions
 
+GAUSSIAN_DIST = "gaussian"
 NINE_GAUSSIANS_DIST = "nine_gaussians"
 TWO_RINGS_DIST = "two_rings"
 CHECKERBOARD_DIST = "checkerboard"
-TARGET_DISTS = [NINE_GAUSSIANS_DIST, TWO_RINGS_DIST, CHECKERBOARD_DIST]
+TARGET_DISTS = [GAUSSIAN_DIST, NINE_GAUSSIANS_DIST, TWO_RINGS_DIST, CHECKERBOARD_DIST]
 
 
 class Ring2D(tfd.Distribution):
@@ -113,9 +114,10 @@ def nine_gaussians_dist(variance=0.1):
       cat=tfd.Categorical(probs=tf.ones([9], dtype=tf.float32) / 9.),
       components=components)
 
-
 def get_target_distribution(name, nine_gaussians_variance=0.01):
-  if name == NINE_GAUSSIANS_DIST:
+  if name == GAUSSIAN_DIST:
+    return tfd.Normal(loc=[0.,0.], scale=[1., 1.])
+  elif name == NINE_GAUSSIANS_DIST:
     return nine_gaussians_dist(variance=nine_gaussians_variance)
   elif name == TWO_RINGS_DIST:
     return two_rings_dist()

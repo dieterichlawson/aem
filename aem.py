@@ -54,6 +54,7 @@ tf_viridis = lambda x: tf.py_func(cm.get_cmap('viridis'), [x], [tf.float64])
 
 def make_slug():
   d =[("model", FLAGS.model),
+      ("target", FLAGS.target),
       ("lr", FLAGS.learning_rate),
       ("bs", FLAGS.batch_size)]
   if FLAGS.model in ["aem", "eim", "aem_ssm"]:
