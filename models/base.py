@@ -170,16 +170,19 @@ class ResMADE(object):
     return tf.transpose(reshaped, [0,2,1])
   
   
-class ENN(object):
+class ResNet(object):
 
   def __init__(self, 
-          data_dim, 
+          input_dim, 
           num_hidden_units, 
           num_res_blocks, 
+          output_dim=1,
           final_activation=None,
-          name="enn"):
-    with tf.variable_scope("enn"):
-      self.first_layer = DenseLayer(data_dim,
+          name="resnet"):
+    self.output_dim = output_dim
+    self.input_dim = input_dim
+    with tf.variable_scope("resnet"):
+      self.first_layer = DenseLayer(input_dim,
                                     num_hidden_units,
                                     activation=None,
                                     name="first_layer")
@@ -190,16 +193,37 @@ class ENN(object):
         for i in range(num_res_blocks)
       ]
       self.final_layer = DenseLayer(num_hidden_units,
-                                    1,
+                                    output_dim,
                                     activation=final_activation,
                                     name="final_layer")
 
   def __call__(self, x):
-    batch_size, data_dim, context_dim = x.get_shape().as_list()
-    x = tf.reshape(x, [batch_size*data_dim, context_dim])
+    shape = x.get_shape().as_list()
+    last_shape = shape[-1]
+    assert self.input_dim == last_shape
+    prefix_shape = shape[:-1]
+    prefix_prod = tf.reduce_prod(prefix_shape)
+    x = tf.reshape(x, [prefix_prod, last_shape])
     x = self.first_layer(x)
     for layer in self.inner_layers:
       x = layer(x)
     x = tf.nn.relu(x)
     out = self.final_layer(x)
-    return tf.reshape(out, [batch_size, data_dim])
+    out_shape = prefix_shape + [self.output_dim]
+    return tf.reshape(out, out_shape)
+
+class ENN(ResNet):
+
+  def __init__(self, 
+          data_dim, 
+          num_hidden_units, 
+          num_res_blocks, 
+          final_activation=None,
+          name="enn"):
+    super().__init__(data_dim, num_hidden_units, num_res_blocks, output_dim=1,
+            final_activation=final_activation, name=name)
+ 
+  def __call__(self, x):
+    batch_size, data_dim, context_dim = x.get_shape().as_list()
+    return tf.reshape(super().__call__(x), [batch_size, data_dim])
+

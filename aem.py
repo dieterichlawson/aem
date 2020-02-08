@@ -11,11 +11,13 @@ import dists
 import models.aem as aem
 import models.eim as eim
 import models.aem_ssm as aem_ssm
+import models.resnet_ssm as resnet_ssm
 
 tf.logging.set_verbosity(tf.logging.INFO)
 tf.app.flags.DEFINE_enum("target", dists.NINE_GAUSSIANS_DIST,  dists.TARGET_DISTS,
                          "Distribution to draw data from.")
-tf.app.flags.DEFINE_enum("model", "aem",  ["aem", "eim", "aem_ssm"],
+tf.app.flags.DEFINE_enum("model", "aem",  
+                          ["aem", "eim", "aem_ssm", "energy_resnet_ssm", "score_resnet_ssm"],
                          "Model to train.")
 tf.app.flags.DEFINE_integer("arnn_num_hidden_units", 256,
                              "Number of hidden units per layer on the ARNN.")
@@ -52,17 +54,23 @@ tf_viridis = lambda x: tf.py_func(cm.get_cmap('viridis'), [x], [tf.float64])
 
 def make_slug():
   d =[("model", FLAGS.model),
-      ("cdim", FLAGS.context_dim),
-      ("arnn_units", FLAGS.arnn_num_hidden_units),
-      ("arnn_blocks", FLAGS.arnn_num_res_blocks),
-      ("enn_units", FLAGS.enn_num_hidden_units),
-      ("enn_blocks", FLAGS.enn_num_res_blocks),
       ("lr", FLAGS.learning_rate),
       ("bs", FLAGS.batch_size)]
-  if FLAGS.model == "aem":
-    d.append(("q_num_comps", FLAGS.q_num_mixture_components))
+  if FLAGS.model in ["aem", "eim", "aem_ssm"]:
+    d.extend([
+        ("cdim", FLAGS.context_dim),
+        ("arnn_units", FLAGS.arnn_num_hidden_units),
+        ("arnn_blocks", FLAGS.arnn_num_res_blocks),
+        ("enn_units", FLAGS.enn_num_hidden_units),
+        ("enn_blocks", FLAGS.enn_num_res_blocks)])
+  elif FLAGS.model == "energy_resnet_ssm":
+    d.extend([
+        ("enn_units", FLAGS.enn_num_hidden_units),
+        ("enn_blocks", FLAGS.enn_num_res_blocks)])
   if FLAGS.model in ["aem", "eim"]:
     d.append(("num_samples", FLAGS.num_importance_samples))
+  if FLAGS.model == "aem":
+    d.append(("q_num_comps", FLAGS.q_num_mixture_components))
   return ".".join([FLAGS.tag] + ["%s_%s" % (k,v) for k,v in d])
 
 def make_log_hooks(global_step, loss, logdir):
@@ -100,29 +108,33 @@ def make_density_image_summary(num_pts, bounds, model):
 
     density_p_plot = tf_viridis(density_p)
     density_q_plot = tf_viridis(density_q)
-    tf.summary.image("p_density", density_p_plot, max_outputs=1, collections=["infrequent_summaries"])
-    tf.summary.image("q_density", density_q_plot, max_outputs=1, collections=["infrequent_summaries"])
+    tf.summary.image("p_density", density_p_plot, max_outputs=1, 
+            collections=["infrequent_summaries"])
+    tf.summary.image("q_density", density_q_plot, max_outputs=1, 
+            collections=["infrequent_summaries"])
   elif FLAGS.model == "eim":
     log_p_hat = model.log_p(XY, num_importance_samples=100, summarize=False)
     density_p = tf.reshape(tf.exp(log_p_hat), [num_pts, num_pts])
     density_p = (density_p - tf.reduce_min(density_p))/(tf.reduce_max(density_p) -
             tf.reduce_min(density_p))
     density_p_plot = tf_viridis(density_p)
-    tf.summary.image("p_density", density_p_plot, max_outputs=1, collections=["infrequent_summaries"])
+    tf.summary.image("p_density", density_p_plot, max_outputs=1, 
+            collections=["infrequent_summaries"])
     _, q_dist = model.arnn(XY)
     density_q = tf.reshape(tf.reduce_sum(q_dist.prob(XY), axis=-1), [num_pts, num_pts])
     density_q = (density_q - tf.reduce_min(density_q))/(tf.reduce_max(density_q) -
             tf.reduce_min(density_q))
     density_q_plot = tf_viridis(density_q)
-    tf.summary.image("q_density", density_q_plot, max_outputs=1, collections=["infrequent_summaries"])
-
-  elif FLAGS.model == "aem_ssm":
+    tf.summary.image("q_density", density_q_plot, max_outputs=1, 
+            collections=["infrequent_summaries"])
+  elif FLAGS.model == "energy_resnet_ssm" or FLAGS.model == "aem_ssm":
     log_energy = model.log_energy(XY, summarize=False)
     density_p = tf.reshape(tf.exp(log_energy), [num_pts, num_pts])
     density_p = (density_p - tf.reduce_min(density_p))/(tf.reduce_max(density_p) -
             tf.reduce_min(density_p))
     density_p_plot = tf_viridis(density_p)
-    tf.summary.image("p_density", density_p_plot, max_outputs=1, collections=["infrequent_summaries"])
+    tf.summary.image("p_density", density_p_plot, max_outputs=1, 
+            collections=["infrequent_summaries"])
 
 
 def main(unused_argv):
@@ -160,6 +172,19 @@ def main(unused_argv):
                         context_dim=FLAGS.context_dim, 
                         enn_num_hidden_units=FLAGS.enn_num_hidden_units, 
                         enn_num_res_blocks=FLAGS.enn_num_res_blocks)
+      elif FLAGS.model == "score_resnet_ssm":
+        model = resnet_ssm.ScoreResnetSSM(
+                data_dim,
+                num_hidden_units=FLAGS.enn_num_hidden_units, 
+                num_res_blocks=FLAGS.enn_num_res_blocks, 
+                num_v=1)
+      elif FLAGS.model == "energy_resnet_ssm":
+        model = resnet_ssm.EnergyResnetSSM(
+                data_dim,
+                num_hidden_units=FLAGS.enn_num_hidden_units, 
+                num_res_blocks=FLAGS.enn_num_res_blocks, 
+                num_v=1)
+
 
       loss = model.loss(data, summarize=True)
       tf.summary.scalar("loss", loss)

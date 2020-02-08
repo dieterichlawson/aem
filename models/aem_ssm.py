@@ -3,14 +3,20 @@ import tensorflow_probability as tfp
 tfd = tfp.distributions
 
 from . import base
+from . import utils
 
 class AEMSSM(object):
   
   def __init__(self,
                data_dim,
-               arnn_num_hidden_units, arnn_num_res_blocks, context_dim,
-               enn_num_hidden_units, enn_num_res_blocks):
+               arnn_num_hidden_units, 
+               arnn_num_res_blocks, 
+               context_dim,
+               enn_num_hidden_units, 
+               enn_num_res_blocks, 
+               num_v=1):
     self.context_dim = context_dim
+    self.num_v = num_v
     with tf.variable_scope("aem"):
       num_outputs_per_dim = context_dim
       self.arnn_net = base.ResMADE(data_dim,
@@ -40,10 +46,5 @@ class AEMSSM(object):
   def loss(self, x, summarize=True):
     batch_size, data_dim = x.get_shape().as_list()
     log_energy = self.log_energy(x, summarize=summarize)
-    hessian = tf.hessians(tf.reduce_mean(log_energy), x)[0]
-    # [batch_size, data_dim]
-    hessians = tf.linalg.tensor_diag_part(hessian)
-    # [batch_size, data_dim]
-    score = tf.gradients(log_energy, x)
-    loss = tf.reduce_mean(tf.reduce_sum(hessians + 0.5*tf.math.square(score), axis=-1))
+    loss = tf.reduce_mean(utils.ssm(log_energy, x, num_v=self.num_v))
     return loss
