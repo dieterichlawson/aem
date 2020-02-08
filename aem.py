@@ -17,7 +17,8 @@ tf.logging.set_verbosity(tf.logging.INFO)
 tf.app.flags.DEFINE_enum("target", dists.NINE_GAUSSIANS_DIST,  dists.TARGET_DISTS,
                          "Distribution to draw data from.")
 tf.app.flags.DEFINE_enum("model", "aem",  
-                          ["aem", "eim", "aem_ssm", "energy_resnet_ssm", "score_resnet_ssm"],
+                          ["aem", "eim", "aem_ssm", "energy_resnet_ssm", "score_resnet_ssm",
+                           "gaussian_ssm"],
                          "Model to train.")
 tf.app.flags.DEFINE_integer("arnn_num_hidden_units", 256,
                              "Number of hidden units per layer on the ARNN.")
@@ -128,7 +129,9 @@ def make_density_image_summary(num_pts, bounds, model):
     density_q_plot = tf_viridis(density_q)
     tf.summary.image("q_density", density_q_plot, max_outputs=1, 
             collections=["infrequent_summaries"])
-  elif FLAGS.model == "energy_resnet_ssm" or FLAGS.model == "aem_ssm":
+  elif (FLAGS.model == "energy_resnet_ssm" or 
+        FLAGS.model == "aem_ssm" or 
+        FLAGS.model == "gaussian_ssm"):
     log_energy = model.log_energy(XY, summarize=False)
     density_p = tf.reshape(tf.exp(log_energy), [num_pts, num_pts])
     density_p = (density_p - tf.reduce_min(density_p))/(tf.reduce_max(density_p) -
@@ -185,7 +188,8 @@ def main(unused_argv):
                 num_hidden_units=FLAGS.enn_num_hidden_units, 
                 num_res_blocks=FLAGS.enn_num_res_blocks, 
                 num_v=1)
-
+      elif FLAGS.model == "gaussian_ssm":
+        model = resnet_ssm.GaussianSSM(data_dim)
 
       loss = model.loss(data, summarize=True)
       tf.summary.scalar("loss", loss)
