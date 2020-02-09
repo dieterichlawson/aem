@@ -8,18 +8,24 @@ import tensorflow_probability as tfp
 tfd = tfp.distributions
 
 import dists
+import datasets
 import models.aem as aem
 import models.eim as eim
 import models.aem_ssm as aem_ssm
 import models.resnet_ssm as resnet_ssm
 
+TARGETS = dists.TARGET_DISTS + ["dynamic_mnist", "raw_mnist", "jittered_mnist"]
+
 tf.logging.set_verbosity(tf.logging.INFO)
-tf.app.flags.DEFINE_enum("target", dists.NINE_GAUSSIANS_DIST,  dists.TARGET_DISTS,
-                         "Distribution to draw data from.")
+tf.app.flags.DEFINE_enum("target", dists.NINE_GAUSSIANS_DIST,  TARGETS,
+                         "Data to train on.")
+tf.app.flags.DEFINE_enum("split", "train", ["train", "valid", "test"], "Split to use.")
 tf.app.flags.DEFINE_enum("model", "aem",  
                           ["aem", "eim", "aem_ssm", "energy_resnet_ssm", "score_resnet_ssm",
                            "gaussian_ssm"],
                          "Model to train.")
+tf.app.flags.DEFINE_enum("activation", "tanh", ["relu", "tanh", "sigmoid"],
+                         "Activation function to use for the networks.")
 tf.app.flags.DEFINE_integer("arnn_num_hidden_units", 256,
                              "Number of hidden units per layer on the ARNN.")
 tf.app.flags.DEFINE_integer("arnn_num_res_blocks", 4,
@@ -46,18 +52,24 @@ tf.app.flags.DEFINE_string("logdir", "/tmp/aem",
                             "Directory for summaries and checkpoints.")
 tf.app.flags.DEFINE_integer("max_steps", int(1e6),
                             "The number of steps to run training for.")
-tf.app.flags.DEFINE_integer("summarize_every", int(1e3),
+tf.app.flags.DEFINE_integer("summarize_every", 100,
                             "The number of steps between each evaluation.")
 FLAGS = tf.app.flags.FLAGS
 
 tf_viridis = lambda x: tf.py_func(cm.get_cmap('viridis'), [x], [tf.float64])
 
+ACTIVATION_DICT = { 
+        "relu": tf.nn.relu,
+        "tanh": tf.math.tanh,
+        "sigmoid": tf.math.sigmoid
+        }
 
 def make_slug():
   d =[("model", FLAGS.model),
       ("target", FLAGS.target),
       ("lr", FLAGS.learning_rate),
-      ("bs", FLAGS.batch_size)]
+      ("bs", FLAGS.batch_size),
+      ("act", FLAGS.activation)]
   if FLAGS.model in ["aem", "eim", "aem_ssm"]:
     d.extend([
         ("cdim", FLAGS.context_dim),
@@ -147,8 +159,18 @@ def main(unused_argv):
     g = tf.Graph()
     with g.as_default():
 
-      data = dists.get_target_distribution(FLAGS.target).sample(FLAGS.batch_size)
-      _, data_dim = data.get_shape().as_list()
+      if FLAGS.target in dists.TARGET_DISTS:
+        data = dists.get_target_distribution(FLAGS.target).sample(FLAGS.batch_size)
+        _, data_dim = data.get_shape().as_list()
+      else:
+        data, mean, _ = datasets.get_dataset(
+                FLAGS.target, FLAGS.batch_size, FLAGS.split, 
+                shuffle=True, repeat=True, initializable=False)
+        data = tf.reshape(data, [FLAGS.batch_size, -1])
+        _, data_dim = data.get_shape().as_list()
+        print("DATA DIM", data_dim)
+     
+      activation = ACTIVATION_DICT[FLAGS.activation]
 
       if FLAGS.model == "aem":
         model = aem.AEM(data_dim,
@@ -159,6 +181,7 @@ def main(unused_argv):
                         enn_num_res_blocks=FLAGS.enn_num_res_blocks, 
                         num_importance_samples=FLAGS.num_importance_samples,
                         q_num_mixture_comps=FLAGS.q_num_mixture_components, 
+                        activation=activation,
                         q_min_scale=1e-3)
       elif FLAGS.model == "eim":
         model = eim.EIM(data_dim,
@@ -168,6 +191,7 @@ def main(unused_argv):
                         enn_num_hidden_units=FLAGS.enn_num_hidden_units, 
                         enn_num_res_blocks=FLAGS.enn_num_res_blocks, 
                         num_importance_samples=FLAGS.num_importance_samples,
+                        activation=activation,
                         q_min_scale=1e-3)
       elif FLAGS.model == "aem_ssm":
         model = aem_ssm.AEMSSM(data_dim,
@@ -175,25 +199,31 @@ def main(unused_argv):
                         arnn_num_res_blocks=FLAGS.arnn_num_res_blocks, 
                         context_dim=FLAGS.context_dim, 
                         enn_num_hidden_units=FLAGS.enn_num_hidden_units, 
-                        enn_num_res_blocks=FLAGS.enn_num_res_blocks)
+                        enn_num_res_blocks=FLAGS.enn_num_res_blocks,
+                        activation=activation)
       elif FLAGS.model == "score_resnet_ssm":
         model = resnet_ssm.ScoreResnetSSM(
                 data_dim,
                 num_hidden_units=FLAGS.enn_num_hidden_units, 
                 num_res_blocks=FLAGS.enn_num_res_blocks, 
+                activation=activation,
                 num_v=1)
       elif FLAGS.model == "energy_resnet_ssm":
         model = resnet_ssm.EnergyResnetSSM(
                 data_dim,
                 num_hidden_units=FLAGS.enn_num_hidden_units, 
                 num_res_blocks=FLAGS.enn_num_res_blocks, 
+                activation=activation,
                 num_v=1)
       elif FLAGS.model == "gaussian_ssm":
         model = resnet_ssm.GaussianSSM(data_dim)
 
       loss = model.loss(data, summarize=True)
       tf.summary.scalar("loss", loss)
-      make_density_image_summary(FLAGS.density_num_bins, (-2,2), model)
+
+      if FLAGS.target in dists.TARGET_DISTS:
+        make_density_image_summary(FLAGS.density_num_bins, (-2,2), model)
+
       global_step = tf.train.get_or_create_global_step()
       learning_rate = tf.train.cosine_decay(FLAGS.learning_rate, 
               global_step, FLAGS.max_steps, name=None)

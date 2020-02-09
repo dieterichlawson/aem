@@ -33,13 +33,15 @@ class ResBlock(object):
   def __init__(self, 
                num_inputs, 
                num_outputs, 
+               activation=tf.nn.relu,
                name="resmade_block"):
     self.num_inputs = num_inputs
     self.num_outputs = num_outputs
+    self.activation = activation
     with tf.variable_scope(name):
       self.layer1 = DenseLayer(num_inputs, 
                                num_outputs, 
-                               activation=tf.nn.relu, 
+                               activation=activation, 
                                name="layer1",
                                weight_initializer=tf.variance_scaling_initializer(
                                    scale=2.0, distribution="normal"))
@@ -51,7 +53,7 @@ class ResBlock(object):
                                    scale=0.1, distribution="normal"))
       
   def __call__(self, in_x):
-    residual = tf.nn.relu(in_x)
+    residual = self.activation(in_x)
     residual = self.layer1(residual)
     residual = self.layer2(residual)
     return in_x + residual
@@ -106,14 +108,16 @@ class MaskedResBlock(ResBlock):
                num_inputs, 
                num_outputs, 
                data_dim, 
+               activation=tf.nn.relu,
                name="resmade_block"):
     self.num_inputs = num_inputs
     self.num_outputs = num_outputs
+    self.activation = activation
     with tf.variable_scope(name):
       self.layer1 = MaskedDenseLayer(num_inputs,
                                      num_outputs, 
                                      data_dim, 
-                                     activation=tf.nn.relu, 
+                                     activation=activation, 
                                      mask_type="hidden",
                                      weight_initializer=tf.variance_scaling_initializer(
                                          scale=2.0, distribution="normal"),
@@ -135,8 +139,10 @@ class ResMADE(object):
                num_hidden_units, 
                num_outputs_per_dim, 
                num_res_blocks, 
+               activation=tf.nn.relu,
                name="resmade"):
     self.num_outputs_per_dim = num_outputs_per_dim
+    self.activation = activation
     with tf.variable_scope("resmade"):
       self.first_layer = MaskedDenseLayer(data_dim, 
                                      num_hidden_units, 
@@ -148,6 +154,7 @@ class ResMADE(object):
         MaskedResBlock(num_hidden_units,
                        num_hidden_units, 
                        data_dim, 
+                       activation=activation,
                        name="block%d" % (i+1)) 
         for i in range(num_res_blocks)
       ]
@@ -164,7 +171,7 @@ class ResMADE(object):
     x = self.first_layer(x)
     for layer in self.inner_layers:
       x = layer(x)
-    x = tf.nn.relu(x)
+    x = self.activation(x)
     out = self.final_layer(x)
     reshaped =  tf.reshape(out, [batch_size, self.num_outputs_per_dim, data_dim])
     return tf.transpose(reshaped, [0,2,1])
@@ -177,10 +184,12 @@ class ResNet(object):
           num_hidden_units, 
           num_res_blocks, 
           output_dim=1,
+          activation=tf.nn.relu,
           final_activation=None,
           name="resnet"):
     self.output_dim = output_dim
     self.input_dim = input_dim
+    self.activation = activation
     with tf.variable_scope("resnet"):
       self.first_layer = DenseLayer(input_dim,
                                     num_hidden_units,
@@ -189,6 +198,7 @@ class ResNet(object):
       self.inner_layers = [
         ResBlock(num_hidden_units,
                  num_hidden_units,
+                 activation=activation,
                  name="block%d" % (i+1))
         for i in range(num_res_blocks)
       ]
@@ -207,7 +217,7 @@ class ResNet(object):
     x = self.first_layer(x)
     for layer in self.inner_layers:
       x = layer(x)
-    x = tf.nn.relu(x)
+    x = self.activation(x)
     out = self.final_layer(x)
     out_shape = prefix_shape + [self.output_dim]
     return tf.reshape(out, out_shape)
@@ -218,10 +228,11 @@ class ENN(ResNet):
           data_dim, 
           num_hidden_units, 
           num_res_blocks, 
+          activation=tf.nn.relu,
           final_activation=None,
           name="enn"):
     super().__init__(data_dim, num_hidden_units, num_res_blocks, output_dim=1,
-            final_activation=final_activation, name=name)
+            activation=activation, final_activation=final_activation, name=name)
  
   def __call__(self, x):
     batch_size, data_dim, context_dim = x.get_shape().as_list()

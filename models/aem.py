@@ -12,6 +12,7 @@ class AEM(object):
                enn_num_hidden_units, enn_num_res_blocks,
                num_importance_samples,
                q_num_mixture_comps,
+               activation=tf.nn.relu,
                q_min_scale=1e-3):
     self.context_dim = context_dim
     self.num_mixture_comps = q_num_mixture_comps
@@ -23,10 +24,12 @@ class AEM(object):
                               arnn_num_hidden_units,
                               num_outputs_per_dim,
                               arnn_num_res_blocks,
+                              activation=activation,
                               name="arnn")
       self.enn_net = base.ENN(context_dim + 1,
                          enn_num_hidden_units,
                          enn_num_res_blocks,
+                         activation=activation,
                          final_activation=lambda x: -tf.nn.softplus(x),
                          name="enn")
   

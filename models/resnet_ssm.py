@@ -11,13 +11,15 @@ class ScoreResnetSSM(object):
   def __init__(self,
                data_dim,
                num_hidden_units, 
-               num_res_blocks, 
+               num_res_blocks,
+               activation=tf.nn.relu,
                num_v=1):
     self.num_v = num_v
     with tf.variable_scope("score_resnet_ssm"):
       self.net = base.ResNet(data_dim,
                              num_hidden_units,
                              num_res_blocks,
+                             activation=activation,
                              output_dim=data_dim)
   
   def grad_log_energy(self, x, summarize=True):
@@ -36,13 +38,15 @@ class EnergyResnetSSM(object):
                data_dim,
                num_hidden_units, 
                num_res_blocks, 
+               activation=tf.nn.relu,
                num_v=1):
     self.num_v = num_v
     with tf.variable_scope("energy_resnet_ssm"):
       self.net = base.ResNet(data_dim,
                              num_hidden_units,
                              num_res_blocks,
-                             final_activation=lambda x: -tf.nn.softplus(x),
+                             activation=activation,
+                             final_activation=None,#lambda x: -tf.nn.softplus(x),
                              output_dim=1)
  
   def log_energy(self, x, summarize=True):
