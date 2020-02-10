@@ -235,6 +235,7 @@ class ENN(ResNet):
             activation=activation, final_activation=final_activation, name=name)
  
   def __call__(self, x):
-    batch_size, data_dim, context_dim = x.get_shape().as_list()
-    return tf.reshape(super().__call__(x), [batch_size, data_dim])
+    # Last dimension will be one so we reshape it away.
+    input_shape  = x.get_shape().as_list()
+    return tf.reshape(super().__call__(x), input_shape[:-1])
 

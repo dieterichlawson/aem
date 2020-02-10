@@ -221,6 +221,12 @@ def main(unused_argv):
       loss = model.loss(data, summarize=True)
       tf.summary.scalar("loss", loss)
 
+      if FLAGS.target == "raw_mnist" and FLAGS.model == "aem":
+        sample = model.sample(num_samples=4, num_importance_samples=10)
+        sample = tf.reshape(sample, [4, 28, 28, 1])
+        tf.summary.image("sample", sample, max_outputs=4, 
+              collections=["infrequent_summaries"])
+      
       if FLAGS.target in dists.TARGET_DISTS:
         make_density_image_summary(FLAGS.density_num_bins, (-2,2), model)
 
