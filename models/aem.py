@@ -97,37 +97,6 @@ class AEM(object):
                               summarize=summarize)
     return -tf.reduce_mean(log_p + log_q)
 
-  def old_sample(self, num_samples=1, num_importance_samples=100):
-    sample_ta = tf.TensorArray(
-            dtype=tf.float32, 
-            size=self.data_dim, 
-            dynamic_size=False,
-            clear_after_read=False, 
-            element_shape=[num_samples]).unstack(tf.zeros([self.data_dim, num_samples]))
-
-    for i in range(self.data_dim):
-      contexts, q = self.arnn(tf.transpose(sample_ta.stack()))
-      # [num_samples, context_dim]
-      context_i = contexts[:,i,:]
-      # [num_importance_samples, num_samples]
-      sample = q.sample(num_importance_samples)[:,:,i]
-      # [num_importance_samples, num_samples, context_dim]
-      tiled_contexts  = tf.tile(context_i[tf.newaxis, :, :], [num_importance_samples, 1, 1])
-      # [num_importance_samples, num_samples, context_dim+1]
-      enn_input = tf.concat([sample[:,:, tf.newaxis], tiled_contexts], axis=-1)
-      # [num_importance_samples, num_samples]
-      log_energies = self.enn_net(enn_input)
-      # [num_samples]
-      log_Z_hat = (tf.math.reduce_logsumexp(log_energies, axis=0) -
-        tf.log(tf.to_float(num_importance_samples)))
-      # [num_importance_samples, num_samples]
-      weights = log_energies - log_Z_hat[tf.newaxis,:]
-      inds = tfd.Categorical(probs=weights).sample()
-      # [num_samples]
-      outs = tf.reshape(tf.gather(tf.transpose(sample), inds[:,tf.newaxis], batch_dims=1), [num_samples])
-      sample_ta = sample_ta.write(i, outs)
-    return tf.transpose(sample_ta.stack())
-
   def sample(self, num_samples=1, num_importance_samples=100):
     sample_ta = tf.TensorArray(
             dtype=tf.float32, 
@@ -142,10 +111,11 @@ class AEM(object):
       context_i = contexts[:,i,:]
       # [num_importance_samples, num_samples]
       sample = q.sample(num_importance_samples)[:,:,i]
+      centered_sample = sample - self.data_mean[i]
       # [num_importance_samples, num_samples, context_dim]
       tiled_contexts  = tf.tile(context_i[tf.newaxis, :, :], [num_importance_samples, 1, 1])
       # [num_importance_samples, num_samples, context_dim+1]
-      enn_input = tf.concat([sample[:,:, tf.newaxis], tiled_contexts], axis=-1)
+      enn_input = tf.concat([centered_sample[:,:, tf.newaxis], tiled_contexts], axis=-1)
       # [num_importance_samples, num_samples]
       log_energies = self.enn_net(enn_input)
       # [num_samples]
