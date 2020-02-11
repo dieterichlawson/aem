@@ -162,13 +162,14 @@ def main(unused_argv):
       if FLAGS.target in dists.TARGET_DISTS:
         data = dists.get_target_distribution(FLAGS.target).sample(FLAGS.batch_size)
         _, data_dim = data.get_shape().as_list()
+        mean = None
       else:
         data, mean, _ = datasets.get_dataset(
                 FLAGS.target, FLAGS.batch_size, FLAGS.split, 
                 shuffle=True, repeat=True, initializable=False)
         data = tf.reshape(data, [FLAGS.batch_size, -1])
+        mean = tf.reshape(mean, [-1])
         _, data_dim = data.get_shape().as_list()
-        print("DATA DIM", data_dim)
      
       activation = ACTIVATION_DICT[FLAGS.activation]
 
@@ -182,6 +183,7 @@ def main(unused_argv):
                         num_importance_samples=FLAGS.num_importance_samples,
                         q_num_mixture_comps=FLAGS.q_num_mixture_components, 
                         activation=activation,
+                        data_mean=mean,
                         q_min_scale=1e-3)
       elif FLAGS.model == "eim":
         model = eim.EIM(data_dim,
@@ -221,7 +223,7 @@ def main(unused_argv):
       loss = model.loss(data, summarize=True)
       tf.summary.scalar("loss", loss)
 
-      if FLAGS.target == "raw_mnist" and FLAGS.model in ["aem", "eim"]:
+      if "mnist" in FLAGS.target and FLAGS.model in ["aem", "eim"]:
         sample = model.sample(num_samples=4, num_importance_samples=10)
         sample = tf.reshape(sample, [4, 28, 28, 1])
         tf.summary.image("sample", sample, max_outputs=4, 

@@ -12,8 +12,13 @@ class AEM(object):
                enn_num_hidden_units, enn_num_res_blocks,
                num_importance_samples,
                q_num_mixture_comps,
+               data_mean=None,
                activation=tf.nn.relu,
                q_min_scale=1e-3):
+    if data_mean is None:
+      self.data_mean = tf.zeros([data_dim], dtype=tf.float32)
+    else:
+      self.data_mean = data_mean
     self.context_dim = context_dim
     self.num_mixture_comps = q_num_mixture_comps
     self.min_scale = q_min_scale
@@ -37,7 +42,7 @@ class AEM(object):
   def arnn(self, x):
     batch_size, data_dim = x.get_shape().as_list()
     cd = self.context_dim
-    arnn_net_outs = self.arnn_net(x)
+    arnn_net_outs = self.arnn_net(x - self.data_mean)
     contexts = arnn_net_outs[:,:,0:cd]
     # Construct the mixture
     mixture_weights = tf.nn.softmax(arnn_net_outs[:,:,cd:cd + self.num_mixture_comps], axis=-1)
@@ -67,6 +72,7 @@ class AEM(object):
     # [num_importance_samples, batch_size, data_dim]
     sample_log_q = tf.stop_gradient(q.log_prob(samples))
     xs = tf.concat([samples, x[tf.newaxis,:,:]], axis=0) # [num_importances_samples+1, batch_size, data_dim]
+    xs = xs - self.data_mean[tf.newaxis, tf.newaxis, :]
     contexts = tf.tile(contexts[tf.newaxis,:,:,:], [nis+1,1,1,1]) # [num_importance_samples+1, batch_size, data_dim, context_dim]
     enn_input = tf.concat([xs[:,:,:,tf.newaxis], contexts], axis=-1)
     #TODO(dlaw): remove these commented-out lines?
