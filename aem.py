@@ -221,7 +221,7 @@ def main(unused_argv):
       loss = model.loss(data, summarize=True)
       tf.summary.scalar("loss", loss)
 
-      if FLAGS.target == "raw_mnist" and FLAGS.model == "aem":
+      if FLAGS.target == "raw_mnist" and FLAGS.model in ["aem", "eim"]:
         sample = model.sample(num_samples=4, num_importance_samples=10)
         sample = tf.reshape(sample, [4, 28, 28, 1])
         tf.summary.image("sample", sample, max_outputs=4, 
