@@ -13,6 +13,7 @@ import models.aem as aem
 import models.eim as eim
 import models.aem_ssm as aem_ssm
 import models.resnet_ssm as resnet_ssm
+import models.base as base
 
 TARGETS = dists.TARGET_DISTS + ["dynamic_mnist", "raw_mnist", "jittered_mnist"]
 
@@ -171,6 +172,11 @@ def main(unused_argv):
         _, data_dim = data.get_shape().as_list()
      
       activation = ACTIVATION_DICT[FLAGS.activation]
+      
+      if FLAGS.model == "eim" and FLAGS.target == "jittered_mnist":
+        squash=True
+      else:
+        squash=False
 
       if FLAGS.model == "aem":
         model = aem.AEM(data_dim,
@@ -193,8 +199,9 @@ def main(unused_argv):
                         enn_num_res_blocks=FLAGS.enn_num_res_blocks, 
                         num_importance_samples=FLAGS.num_importance_samples,
                         activation=activation,
-                        data_mean=mean, 
+                        data_mean=None if squash else mean, 
                         q_min_scale=1e-3)
+        model = base.SquashedDistribution(model, mean)
       elif FLAGS.model == "aem_ssm":
         model = aem_ssm.AEMSSM(data_dim,
                         arnn_num_hidden_units=FLAGS.arnn_num_hidden_units, 
