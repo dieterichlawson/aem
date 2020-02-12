@@ -239,3 +239,41 @@ class ENN(ResNet):
     input_shape  = x.get_shape().as_list()
     return tf.reshape(super().__call__(x), input_shape[:-1])
 
+def get_squash(squash_eps=1e-6):
+  return tfp.bijectors.Chain([
+      tfp.bijectors.AffineScalar(scale=256.),
+      tfp.bijectors.AffineScalar(
+          shift=-squash_eps / 2., scale=(1. + squash_eps)),
+      tfp.bijectors.Sigmoid(),
+  ])
+
+class SquashedDistribution(object):
+  """Apply a squashing bijector to a distribution."""
+
+  def __init__(self, distribution, data_mean, squash_eps=1e-6):
+    self.distribution = distribution
+    self.data_mean = data_mean
+    self.squash = get_squash(squash_eps)
+    self.unsquashed_data_mean = self.squash.inverse(self.data_mean)
+
+  def log_p(self, data, num_importance_samples=10, summarize=True):
+    unsquashed_data = (self.squash.inverse(data) - self.unsquashed_data_mean)
+    log_prob = self.distribution.log_p(unsquashed_data,
+            num_importance_samples=num_importance_samples,
+            summarize=summarize)
+    log_prob = (log_prob + self.squash.inverse_log_det_jacobian(
+        data, event_ndims=tf.rank(data) - 1))
+
+    return log_prob
+
+  def sample(self, num_samples=1, num_importance_samples=10):
+    samples = self.distribution.sample(num_samples=num_samples,
+            num_importance_samples=num_importance_samples)
+    samples += self.unsquashed_data_mean
+    samples = self.squash.forward(samples)
+    return samples
+
+  def loss(self, x, num_importance_samples=None, summarize=True):
+    return -tf.reduce_mean(self.log_p(x,
+        num_importance_samples=num_importance_samples,
+        summarize=summarize))
