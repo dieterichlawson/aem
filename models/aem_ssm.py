@@ -14,7 +14,7 @@ class AEMSSM(object):
                context_dim,
                enn_num_hidden_units, 
                enn_num_res_blocks, 
-               activation=tf.nn.relu,a
+               activation=tf.nn.relu,
                data_mean=None,
                num_v=1):
     if data_mean is None:
