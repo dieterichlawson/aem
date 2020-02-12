@@ -14,8 +14,13 @@ class AEMSSM(object):
                context_dim,
                enn_num_hidden_units, 
                enn_num_res_blocks, 
-               activation=tf.nn.relu,
+               activation=tf.nn.relu,a
+               data_mean=None,
                num_v=1):
+    if data_mean is None:
+      self.data_mean = tf.zeros([data_dim], dtype=tf.float32)
+    else:
+      self.data_mean = data_mean
     self.context_dim = context_dim
     self.num_v = num_v
     with tf.variable_scope("aem"):
@@ -34,10 +39,11 @@ class AEMSSM(object):
   
   def log_energy(self, x, summarize=True):
     batch_size, data_dim = x.get_shape().as_list()
+    centered_x = x - self.data_mean[tf.newaxis,:]
     # [batch_size, data_dim, context_dim]
-    contexts = self.arnn_net(x)
+    contexts = self.arnn_net(centered_x)
     # [batch_size, data_dim, context_dim+1]
-    enn_input = tf.concat([x[:,:,tf.newaxis], contexts], axis=-1)
+    enn_input = tf.concat([centered_x[:,:,tf.newaxis], contexts], axis=-1)
     log_energies = self.enn_net(enn_input)
     log_energies = tf.reshape(log_energies, [batch_size, data_dim])
     # [batch_size]

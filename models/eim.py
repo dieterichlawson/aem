@@ -12,7 +12,12 @@ class EIM(object):
                enn_num_hidden_units, enn_num_res_blocks,
                num_importance_samples,
                activation=tf.nn.relu,
+               data_mean=None,
                q_min_scale=1e-3):
+    if data_mean is None:
+      self.data_mean = tf.zeros([data_dim], dtype=tf.float32)
+    else:
+      self.data_mean = data_mean
     self.context_dim = context_dim
     self.min_scale = q_min_scale
     self.num_importance_samples = num_importance_samples
@@ -34,7 +39,7 @@ class EIM(object):
   def arnn(self, x):
     batch_size, data_dim = x.get_shape().as_list()
     cd = self.context_dim
-    arnn_net_outs = self.arnn_net(x)
+    arnn_net_outs = self.arnn_net(x - self.data_mean)
     contexts = arnn_net_outs[:,:,0:cd]
     # Construct the mixture
     mixture_means = arnn_net_outs[:,:,cd]
@@ -53,8 +58,8 @@ class EIM(object):
     # [num_importance_samples, batch_size, data_dim]
     samples = proposal.sample(nis)
     # [num_importance_samples, batch_size, data_dim]
-    #sample_log_q = proposal.log_prob(samples)
     xs = tf.concat([samples, x[tf.newaxis,:,:]], axis=0) # [num_importances_samples+1, batch_size, data_dim]
+    xs = xs - self.data_mean[tf.newaxis, tf.newaxis, :]
     contexts = tf.tile(contexts[tf.newaxis,:,:,:], [nis+1,1,1,1]) # [num_importance_samples+1, batch_size, data_dim, context_dim]
     enn_input = tf.concat([xs[:,:,:,tf.newaxis], contexts], axis=-1)
     enn_input = tf.reshape(enn_input, [(nis+1)*batch_size, data_dim, self.context_dim+1])
@@ -65,8 +70,6 @@ class EIM(object):
     # [batch_size, data_dim]
     log_Z_hat = tf.math.reduce_logsumexp(log_energies, axis=0) - tf.log(tf.to_float(nis+1)) 
     log_Z_hat = tf.reduce_sum(log_Z_hat, axis=-1) # [batch_size]
-    #log_Z_hat = tf.math.reduce_logsumexp(sample_log_energies - sample_log_q, axis=0) - tf.log(tf.to_float(nis))
-    #log_p_hat = tf.math.reduce_sum(data_log_energies - log_Z_hat, axis=-1) # [batch_size]
     log_q_data = tf.math.reduce_sum(proposal.log_prob(x), axis=-1) # [batch_size]
     log_p_lower_bound = log_q_data + data_log_energies - log_Z_hat #[batch_size]
     return log_p_lower_bound
@@ -90,10 +93,11 @@ class EIM(object):
       context_i = contexts[:,i,:]
       # [num_importance_samples, num_samples]
       sample = q.sample(num_importance_samples)[:,:,i]
+      centered_sample = sample - self.data_mean[i]
       # [num_importance_samples, num_samples, context_dim]
       tiled_contexts  = tf.tile(context_i[tf.newaxis, :, :], [num_importance_samples, 1, 1])
       # [num_importance_samples, num_samples, context_dim+1]
-      enn_input = tf.concat([sample[:,:, tf.newaxis], tiled_contexts], axis=-1)
+      enn_input = tf.concat([centered_sample[:,:, tf.newaxis], tiled_contexts], axis=-1)
       # [num_importance_samples, num_samples]
       log_energies = self.enn_net(enn_input)
       # [num_samples]

@@ -193,6 +193,7 @@ def main(unused_argv):
                         enn_num_res_blocks=FLAGS.enn_num_res_blocks, 
                         num_importance_samples=FLAGS.num_importance_samples,
                         activation=activation,
+                        data_mean=mean, 
                         q_min_scale=1e-3)
       elif FLAGS.model == "aem_ssm":
         model = aem_ssm.AEMSSM(data_dim,
@@ -201,6 +202,7 @@ def main(unused_argv):
                         context_dim=FLAGS.context_dim, 
                         enn_num_hidden_units=FLAGS.enn_num_hidden_units, 
                         enn_num_res_blocks=FLAGS.enn_num_res_blocks,
+                        data_mean=mean,
                         activation=activation)
       elif FLAGS.model == "score_resnet_ssm":
         model = resnet_ssm.ScoreResnetSSM(
@@ -208,6 +210,7 @@ def main(unused_argv):
                 num_hidden_units=FLAGS.enn_num_hidden_units, 
                 num_res_blocks=FLAGS.enn_num_res_blocks, 
                 activation=activation,
+                data_mean=mean,
                 num_v=1)
       elif FLAGS.model == "energy_resnet_ssm":
         model = resnet_ssm.EnergyResnetSSM(
@@ -215,6 +218,7 @@ def main(unused_argv):
                 num_hidden_units=FLAGS.enn_num_hidden_units, 
                 num_res_blocks=FLAGS.enn_num_res_blocks, 
                 activation=activation,
+                data_mean=mean,
                 num_v=1)
       elif FLAGS.model == "gaussian_ssm":
         model = resnet_ssm.GaussianSSM(data_dim)

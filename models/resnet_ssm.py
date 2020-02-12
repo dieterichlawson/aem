@@ -13,8 +13,13 @@ class ScoreResnetSSM(object):
                num_hidden_units, 
                num_res_blocks,
                activation=tf.nn.relu,
+               data_mean=None,
                num_v=1):
     self.num_v = num_v
+    if data_mean is None:
+      self.data_mean = tf.zeros([data_dim], dtype=tf.float32)
+    else:
+      self.data_mean = data_mean
     with tf.variable_scope("score_resnet_ssm"):
       self.net = base.ResNet(data_dim,
                              num_hidden_units,
@@ -23,7 +28,7 @@ class ScoreResnetSSM(object):
                              output_dim=data_dim)
   
   def grad_log_energy(self, x, summarize=True):
-    return self.net(x)
+    return self.net(x - self.data_mean[tf.newaxis,:])
 
   def loss(self, x, summarize=True):
     grad_log_energy = self.grad_log_energy(x, summarize=summarize)
@@ -39,7 +44,13 @@ class EnergyResnetSSM(object):
                num_hidden_units, 
                num_res_blocks, 
                activation=tf.nn.relu,
+               data_mean=None,
                num_v=1):
+    if data_mean is None:
+      self.data_mean = tf.zeros([data_dim], dtype=tf.float32)
+    else:
+      self.data_mean = data_mean
+
     self.num_v = num_v
     with tf.variable_scope("energy_resnet_ssm"):
       self.net = base.ResNet(data_dim,
@@ -51,7 +62,7 @@ class EnergyResnetSSM(object):
  
   def log_energy(self, x, summarize=True):
     batch_size, data_dim = x.get_shape().as_list()
-    return tf.reshape(self.net(x), [batch_size])
+    return tf.reshape(self.net(x - self.data_mean[tf.newaxis,:]), [batch_size])
 
   def loss(self, x, summarize=True):
     log_energy = self.log_energy(x, summarize=summarize)
@@ -61,14 +72,13 @@ class EnergyResnetSSM(object):
     return loss
 
 class GaussianSSM(object):
-  """A model trained with SSM that models the log energy using a ResNet."""
   
   def __init__(self,
                data_dim,
                num_v=1,
                min_scale=1e-3):
     self.num_v = num_v
-    with tf.variable_scope("energy_resnet_ssm"):
+    with tf.variable_scope("gaussian_ssm"):
       self.mean = tf.get_variable(name="mean", shape=[data_dim],
               initializer=tf.constant_initializer(1.))
       self.scale_diag_raw = tf.get_variable(name="raw_scale_diag", shape=[data_dim],
