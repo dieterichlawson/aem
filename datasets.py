@@ -2,11 +2,23 @@ import tensorflow.compat.v1 as tf
 import tensorflow_probability as tfp
 tfd = tfp.distributions
 import tensorflow_datasets as tfds
+import numpy as np
+import os
 
 flags = tf.flags
 
 flags.DEFINE_string("data_dir", None, "Directory to store datasets.")
 FLAGS = flags.FLAGS
+
+def get_uci_power_dataset(split="train", shuffle_files=False):
+  return get_uci_dataset("power", split=split)
+
+def get_uci_dataset(dataset_name, split="train"):
+  path = os.path.join(FLAGS.data_dir, "data","processed", dataset_name, "%s.npy" % split)
+  data = np.load(path)
+  num_pts, data_dim = data.shape
+  dataset = tf.data.Dataset.from_tensor_slices(data)
+  return dataset, tf.zeros([data_dim], dtype=tf.float32)
 
 
 def get_static_mnist(split="train", shuffle_files=False):
@@ -56,6 +68,7 @@ def dataset_and_mean_to_batch(dataset,
                               repeat=True,
                               shuffle=True,
                               initializable=False,
+                              preprocess=True,
                               jitter=False):
   """Transforms data based on args (assumes images in [0, 255])."""
 
@@ -78,8 +91,8 @@ def dataset_and_mean_to_batch(dataset,
       im /= 255.
 
     return im
-
-  dataset = dataset.map(_preprocess)
+  if preprocess:
+    dataset = dataset.map(_preprocess)
 
   if repeat:
     dataset = dataset.repeat()
@@ -125,6 +138,9 @@ def get_dataset(dataset,
       "static_mnist": (get_static_mnist, {}),
       "jittered_mnist": (get_mnist, {
           "jitter": True,
+      }),
+      "power": (get_uci_power_dataset, {
+          "preprocess": False,
       }),
       #"jittered_celeba": (get_celeba, {
       #    "jitter": True
