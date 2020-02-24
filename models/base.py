@@ -22,7 +22,7 @@ class DenseLayer(object):
   
   def __call__(self, x):
     batch_size, input_dim = x.get_shape().as_list()
-    assert input_dim == self.num_inputs, "%s, %s " %(input_dim, self.num_inputs)
+    #assert input_dim == self.num_inputs, "%s, %s " %(input_dim, self.num_inputs)
     out = tf.linalg.matmul(x, self.W, transpose_b=True) + self.b[tf.newaxis,:]
     if self.activation is not None:
       out = self.activation(out)
@@ -95,7 +95,7 @@ class MaskedDenseLayer(DenseLayer):
     
   def __call__(self, x):
     batch_size, input_dim = x.get_shape().as_list()
-    assert input_dim == self.num_inputs
+    #assert input_dim == self.num_inputs
     out = tf.linalg.matmul(x, self.W*self.mask, transpose_b=True) + self.b[tf.newaxis,:]
     #out = tf.linalg.matmul(x, self.W, transpose_b=True) + self.b[tf.newaxis,:]
     if self.activation is not None:
@@ -167,7 +167,8 @@ class ResMADE(object):
                                           name="final_layer")
 
   def __call__(self, x):
-    batch_size, data_dim = x.get_shape().as_list()
+    batch_size = tf.shape(x)[0]
+    data_dim = tf.shape(x)[1]
     x = self.first_layer(x)
     for layer in self.inner_layers:
       x = layer(x)
@@ -208,9 +209,9 @@ class ResNet(object):
                                     name="final_layer")
 
   def __call__(self, x):
-    shape = x.get_shape().as_list()
+    shape = tf.shape(x)
     last_shape = shape[-1]
-    assert self.input_dim == last_shape
+    #assert self.input_dim == last_shape
     prefix_shape = shape[:-1]
     prefix_prod = tf.reduce_prod(prefix_shape)
     x = tf.reshape(x, [prefix_prod, last_shape])
@@ -219,7 +220,7 @@ class ResNet(object):
       x = layer(x)
     x = self.activation(x)
     out = self.final_layer(x)
-    out_shape = prefix_shape + [self.output_dim]
+    out_shape = tf.concat([prefix_shape, [self.output_dim]], axis=0)
     return tf.reshape(out, out_shape)
 
 class ENN(ResNet):
@@ -236,7 +237,7 @@ class ENN(ResNet):
  
   def __call__(self, x):
     # Last dimension will be one so we reshape it away.
-    input_shape  = x.get_shape().as_list()
+    input_shape  = tf.shape(x)
     return tf.reshape(super().__call__(x), input_shape[:-1])
 
 def get_squash(squash_eps=1e-6):
