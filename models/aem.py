@@ -13,7 +13,8 @@ class AEM(object):
                num_importance_samples,
                q_num_mixture_comps,
                data_mean=None,
-               activation=tf.nn.relu,
+               enn_activation=tf.nn.relu,
+               arnn_activation=tf.nn.relu,
                q_min_scale=1e-3):
     if data_mean is None:
       self.data_mean = tf.zeros([data_dim], dtype=tf.float32)
@@ -30,12 +31,12 @@ class AEM(object):
                               arnn_num_hidden_units,
                               num_outputs_per_dim,
                               arnn_num_res_blocks,
-                              activation=activation,
+                              activation=arnn_activation,
                               name="arnn")
       self.enn_net = base.ENN(context_dim + 1,
                          enn_num_hidden_units,
                          enn_num_res_blocks,
-                         activation=activation,
+                         activation=enn_activation,
                          final_activation=lambda x: -tf.nn.softplus(x),
                          name="enn")
   

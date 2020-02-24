@@ -14,7 +14,8 @@ class AEMSSM(object):
                context_dim,
                enn_num_hidden_units, 
                enn_num_res_blocks, 
-               activation=tf.nn.relu,
+               arnn_activation=tf.nn.relu,
+               enn_activation=tf.nn.relu,
                data_mean=None,
                num_v=1):
     if data_mean is None:
@@ -29,12 +30,12 @@ class AEMSSM(object):
                                    arnn_num_hidden_units,
                                    context_dim,
                                    arnn_num_res_blocks,
-                                   activation=activation,
+                                   activation=arnn_activation,
                                    name="arnn")
       self.enn_net = base.ENN(context_dim + 1,
                               enn_num_hidden_units,
                               enn_num_res_blocks,
-                              activation=activation,
+                              activation=enn_activation,
                               name="enn")
   
   def log_energy(self, x, summarize=True):

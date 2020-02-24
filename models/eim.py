@@ -11,7 +11,8 @@ class EIM(object):
                arnn_num_hidden_units, arnn_num_res_blocks, context_dim,
                enn_num_hidden_units, enn_num_res_blocks,
                num_importance_samples,
-               activation=tf.nn.relu,
+               proposal_activation=tf.nn.relu,
+               energy_activation=tf.nn.relu,
                data_mean=None,
                q_min_scale=1e-3):
     if data_mean is None:
@@ -28,12 +29,12 @@ class EIM(object):
                                    arnn_num_hidden_units,
                                    num_outputs_per_dim,
                                    arnn_num_res_blocks,
-                                   activation=activation,
+                                   activation=proposal_activation,
                                    name="arnn")
       self.enn_net = base.ENN(context_dim + 1,
                               enn_num_hidden_units,
                               enn_num_res_blocks,
-                              activation=activation,
+                              activation=energy_activation,
                               name="enn")
   
   def arnn(self, x):

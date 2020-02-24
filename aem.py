@@ -27,6 +27,10 @@ tf.app.flags.DEFINE_enum("model", "aem",
                          "Model to train.")
 tf.app.flags.DEFINE_enum("activation", "tanh", ["relu", "tanh", "sigmoid"],
                          "Activation function to use for the networks.")
+tf.app.flags.DEFINE_enum("enn_activation", None, ["relu", "tanh", "sigmoid"],
+                         "Activation function to use for the enn network.")
+tf.app.flags.DEFINE_enum("arnn_activation", None, ["relu", "tanh", "sigmoid"],
+                         "Activation function to use for the arnn network.")
 tf.app.flags.DEFINE_integer("arnn_num_hidden_units", 256,
                              "Number of hidden units per layer on the ARNN.")
 tf.app.flags.DEFINE_integer("arnn_num_res_blocks", 4,
@@ -69,17 +73,19 @@ def make_slug():
   d =[("model", FLAGS.model),
       ("target", FLAGS.target),
       ("lr", FLAGS.learning_rate),
-      ("bs", FLAGS.batch_size),
-      ("act", FLAGS.activation)]
+      ("bs", FLAGS.batch_size)]
   if FLAGS.model in ["aem", "eim", "aem_ssm"]:
     d.extend([
         ("cdim", FLAGS.context_dim),
+        ("arnn_act", FLAGS.arnn_activation),
         ("arnn_units", FLAGS.arnn_num_hidden_units),
         ("arnn_blocks", FLAGS.arnn_num_res_blocks),
+        ("enn_act", FLAGS.enn_activation),
         ("enn_units", FLAGS.enn_num_hidden_units),
         ("enn_blocks", FLAGS.enn_num_res_blocks)])
   elif FLAGS.model == "energy_resnet_ssm":
     d.extend([
+        ("enn_act", FLAGS.enn_activation),
         ("enn_units", FLAGS.enn_num_hidden_units),
         ("enn_blocks", FLAGS.enn_num_res_blocks)])
   if FLAGS.model in ["aem", "eim"]:
@@ -171,8 +177,14 @@ def main(unused_argv):
         data = tf.reshape(data, [FLAGS.batch_size, -1])
         mean = tf.reshape(mean, [-1])
         _, data_dim = data.get_shape().as_list()
-     
-      activation = ACTIVATION_DICT[FLAGS.activation]
+    
+      if FLAGS.enn_activation is None:
+        FLAGS.enn_activation = FLAGS.activation
+      if FLAGS.arnn_activation is None:
+        FLAGS.arnn_activation = FLAGS.activation
+
+      enn_activation = ACTIVATION_DICT[FLAGS.enn_activation]
+      arnn_activation = ACTIVATION_DICT[FLAGS.arnn_activation]
       
       if FLAGS.model == "eim" and FLAGS.target == "jittered_mnist":
         squash=True
@@ -188,7 +200,8 @@ def main(unused_argv):
                         enn_num_res_blocks=FLAGS.enn_num_res_blocks, 
                         num_importance_samples=FLAGS.num_importance_samples,
                         q_num_mixture_comps=FLAGS.q_num_mixture_components, 
-                        activation=activation,
+                        enn_activation=enn_activation,
+                        arnn_activation=arnn_activation,
                         data_mean=mean,
                         q_min_scale=1e-3)
       elif FLAGS.model == "eim":
@@ -199,7 +212,8 @@ def main(unused_argv):
                         enn_num_hidden_units=FLAGS.enn_num_hidden_units, 
                         enn_num_res_blocks=FLAGS.enn_num_res_blocks, 
                         num_importance_samples=FLAGS.num_importance_samples,
-                        activation=activation,
+                        proposal_activation=arnn_activation,
+                        energy_activation=enn_activation,
                         data_mean=None if squash else mean, 
                         q_min_scale=1e-3)
         model = base.SquashedDistribution(model, mean)
@@ -211,13 +225,14 @@ def main(unused_argv):
                         enn_num_hidden_units=FLAGS.enn_num_hidden_units, 
                         enn_num_res_blocks=FLAGS.enn_num_res_blocks,
                         data_mean=mean,
-                        activation=activation)
+                        arnn_activation=arnn_activation,
+                        enn_activation=enn_activation)
       elif FLAGS.model == "score_resnet_ssm":
         model = resnet_ssm.ScoreResnetSSM(
                 data_dim,
                 num_hidden_units=FLAGS.enn_num_hidden_units, 
                 num_res_blocks=FLAGS.enn_num_res_blocks, 
-                activation=activation,
+                activation=enn_activation,
                 data_mean=mean,
                 num_v=1)
       elif FLAGS.model == "energy_resnet_ssm":
@@ -225,7 +240,7 @@ def main(unused_argv):
                 data_dim,
                 num_hidden_units=FLAGS.enn_num_hidden_units, 
                 num_res_blocks=FLAGS.enn_num_res_blocks, 
-                activation=activation,
+                activation=enn_activation,
                 data_mean=mean,
                 num_v=1)
       elif FLAGS.model == "gaussian_ssm":
