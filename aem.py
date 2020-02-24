@@ -93,7 +93,9 @@ def make_slug():
   if FLAGS.model in ["aem", "eim"]:
     d.append(("num_samples", FLAGS.num_importance_samples))
   if FLAGS.model == "aem":
-    d.append(("q_num_comps", FLAGS.q_num_mixture_components))
+    d.extend([
+        ("q_num_comps", FLAGS.q_num_mixture_components),
+        ("wmup_steps", FLAGS.warmup_steps)]) 
   return ".".join([FLAGS.tag] + ["%s_%s" % (k,v) for k,v in d])
 
 def make_log_hooks(global_step, loss, logdir):
