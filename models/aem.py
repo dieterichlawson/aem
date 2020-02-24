@@ -15,6 +15,7 @@ class AEM(object):
                data_mean=None,
                enn_activation=tf.nn.relu,
                arnn_activation=tf.nn.relu,
+               warmup_step_ind=1.,
                q_min_scale=1e-3):
     if data_mean is None:
       self.data_mean = tf.zeros([data_dim], dtype=tf.float32)
@@ -25,6 +26,7 @@ class AEM(object):
     self.min_scale = q_min_scale
     self.num_importance_samples = num_importance_samples
     self.data_dim = data_dim
+    self.warmup_step_ind = warmup_step_ind
     with tf.variable_scope("aem"):
       num_outputs_per_dim = context_dim + 3*q_num_mixture_comps
       self.arnn_net = base.ResMADE(data_dim,
@@ -96,7 +98,7 @@ class AEM(object):
     log_p, log_q = self.log_p(x,
                               num_importance_samples=num_importance_samples,
                               summarize=summarize)
-    return -tf.reduce_mean(log_p + log_q)
+    return -tf.reduce_mean((self.warmup_step_ind * log_p) + log_q)
 
   def sample(self, num_samples=1, num_importance_samples=100):
     sample_ta = tf.TensorArray(

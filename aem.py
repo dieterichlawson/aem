@@ -47,6 +47,8 @@ tf.app.flags.DEFINE_integer("num_importance_samples", 20,
                              "Number of importance samples used to estimate Z_hat.")
 tf.app.flags.DEFINE_float("learning_rate", 1e-4,
                            "The learning rate to use for ADAM or SGD.")
+tf.app.flags.DEFINE_float("warmup_steps", 0,
+                           "Number of steps to train proposal with maximum likelihood for.")
 tf.app.flags.DEFINE_integer("batch_size", 256,
                              "The number of examples per batch.")
 tf.app.flags.DEFINE_integer("density_num_bins", 50,
@@ -190,6 +192,9 @@ def main(unused_argv):
       else:
         squash=False
 
+      global_step = tf.train.get_or_create_global_step()
+      warmup_step_ind = tf.cast(global_step > FLAGS.warmup_steps, tf.float32)
+
       if FLAGS.model == "aem":
         model = aem.AEM(data_dim,
                         arnn_num_hidden_units=FLAGS.arnn_num_hidden_units, 
@@ -202,6 +207,7 @@ def main(unused_argv):
                         enn_activation=enn_activation,
                         arnn_activation=arnn_activation,
                         data_mean=mean,
+                        warmup_step_ind=warmup_step_ind,
                         q_min_scale=1e-3)
       elif FLAGS.model == "eim":
         model = eim.EIM(data_dim,
@@ -257,7 +263,6 @@ def main(unused_argv):
       if FLAGS.target in dists.TARGET_DISTS:
         make_density_image_summary(FLAGS.density_num_bins, (-2,2), model)
 
-      global_step = tf.train.get_or_create_global_step()
       learning_rate = tf.train.cosine_decay(FLAGS.learning_rate, 
               global_step, FLAGS.max_steps, name=None)
       tf.summary.scalar("learning_rate", learning_rate)
