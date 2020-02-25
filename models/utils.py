@@ -103,7 +103,7 @@ def hmc(energy_fn, init_X, L=20, step_size=0.1, burn_in=100, num_samples=1000, m
   X_shape = tf.shape(init_X)
   
   if max_steps == None:
-    max_steps = 10*num_samples
+    max_steps = 1000*num_samples
 
   def hmc_step(i, num_accepted, q, samples):
     # Sample momentum variables as standard Gaussians.
@@ -141,4 +141,9 @@ def hmc(energy_fn, init_X, L=20, step_size=0.1, burn_in=100, num_samples=1000, m
   results = tf.while_loop(hmc_predicate,
                           hmc_step,
                           (0, 0, init_X, samples), back_prop=False)
+  num_steps = results[0]
+  num_accepted = results[1]
+  accept_ratio = num_accepted / (num_steps - burn_in)
+  tf.summary.scalar("acceptance ratio", accept_ratio)
+  tf.summary.scalar("num_hmc_steps", num_steps - burn_in)
   return results[-1].stack()
