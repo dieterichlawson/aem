@@ -16,7 +16,7 @@ import models.aem_arsm as aem_arsm
 import models.resnet_ssm as resnet_ssm
 import models.base as base
 
-TARGETS = dists.TARGET_DISTS + ["dynamic_mnist", "raw_mnist", "jittered_mnist", "power"]
+TARGETS = dists.TARGET_DISTS + ["dynamic_mnist", "raw_mnist", "jittered_mnist", "power", "gas"]
 
 tf.logging.set_verbosity(tf.logging.INFO)
 tf.app.flags.DEFINE_enum("target", dists.NINE_GAUSSIANS_DIST,  TARGETS,
