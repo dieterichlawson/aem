@@ -93,7 +93,7 @@ def est_hess_trace_while2(y, x, num_v=1):
   return estimate
 
 
-def hmc(energy_fn, init_X, L=20, step_size=0.1, burn_in=100, num_samples=1000, max_steps=None):
+def hmc(energy_fn, init_X, L=20, step_size=1.0, burn_in=100, num_samples=1000, max_steps=None):
 
   samples = tf.TensorArray(init_X.dtype, 
                            size=num_samples, 
@@ -103,12 +103,12 @@ def hmc(energy_fn, init_X, L=20, step_size=0.1, burn_in=100, num_samples=1000, m
   X_shape = tf.shape(init_X)
   
   if max_steps == None:
-    max_steps = 10*num_samples
+    max_steps = 10000*num_samples
 
   def hmc_step(i, num_accepted, q, samples):
     # Sample momentum variables as standard Gaussians.
     p = tf.random.normal(X_shape, mean=0., stddev=1.)
-    
+    init_q = q 
     # Compute initial kinetic and potential energies.
     init_K = tf.reduce_sum(tf.square(p))/2.
     init_U = energy_fn(q)
@@ -129,8 +129,9 @@ def hmc(energy_fn, init_X, L=20, step_size=0.1, burn_in=100, num_samples=1000, m
     q = tf.debugging.check_numerics(q, "Nans in q.")
    
     accept = tf.random.uniform([]) < tf.exp(init_U - proposed_U + init_K - proposed_K)
-    accept = tf.logical_and(accept, i > burn_in)
+    accept_samples = tf.logical_and(accept, i > burn_in)
     samples = tf.cond(accept, lambda: samples.write(num_accepted, q), lambda: samples)
+    q = tf.cond(accept, lambda: q, lambda: init_q)
     accept = tf.squeeze(accept)
     return i+1, num_accepted + tf.to_int32(accept), q, samples
     
