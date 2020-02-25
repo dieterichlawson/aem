@@ -91,3 +91,54 @@ def est_hess_trace_while2(y, x, num_v=1):
   estimate = tf.linalg.matmul(grads, v[:,:,tf.newaxis])
   estimate = tf.reduce_mean(estimate, axis=0)
   return estimate
+
+
+def hmc(energy_fn, init_X, L=20, step_size=0.1, burn_in=100, num_samples=1000, max_steps=None):
+
+  samples = tf.TensorArray(init_X.dtype, 
+                           size=num_samples, 
+                           dynamic_size=False, 
+                           name='samples_ta')
+  init_X = init_X[tf.newaxis,:] 
+  X_shape = tf.shape(init_X)
+  
+  if max_steps == None:
+    max_steps = 10*num_samples
+
+  def hmc_step(i, num_accepted, q, samples):
+    # Sample momentum variables as standard Gaussians.
+    p = tf.random.normal(X_shape, mean=0., stddev=1.)
+    
+    # Compute initial kinetic and potential energies.
+    init_K = tf.reduce_sum(tf.square(p))/2.
+    init_U = energy_fn(q)
+    
+    # Do first half-step
+    p = p - step_size * tf.gradients(init_U, q)[0] / 2.
+    # Run for L steps.
+    for step in range(L):
+      q = q + step_size*p
+      if step != L-1:
+        p = p - step_size * tf.gradients(energy_fn(q), q)[0]
+    proposed_U = energy_fn(q)
+    p = p - step_size * tf.gradients(proposed_U, q)[0] / 2.
+    p = -p
+    proposed_K = tf.reduce_sum(tf.square(p)) / 2.
+    
+    p = tf.debugging.check_numerics(p, "Nans in p.")
+    q = tf.debugging.check_numerics(q, "Nans in q.")
+   
+    accept = tf.random.uniform([]) < tf.exp(init_U - proposed_U + init_K - proposed_K)
+    accept = tf.logical_and(accept, i > burn_in)
+    samples = tf.cond(accept, lambda: samples.write(num_accepted, q), lambda: samples)
+    accept = tf.squeeze(accept)
+    return i+1, num_accepted + tf.to_int32(accept), q, samples
+    
+  def hmc_predicate(i, num_accepted, unused_q, unused_samples):
+    return tf.logical_and(tf.less(i, burn_in + max_steps), 
+                          tf.less(num_accepted, num_samples))
+  
+  results = tf.while_loop(hmc_predicate,
+                          hmc_step,
+                          (0, 0, init_X, samples), back_prop=False)
+  return results[-1].stack()
