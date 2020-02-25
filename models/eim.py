@@ -80,7 +80,7 @@ class EIM(object):
                                       num_importance_samples=num_importance_samples,
                                       summarize=summarize))
 
-  def sample(self, num_samples=1, num_importance_samples=100):
+  def sample(self, num_samples=1, num_importance_samples=20):
     sample_ta = tf.TensorArray(
             dtype=tf.float32,
             size=self.data_dim,
