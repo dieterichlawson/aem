@@ -10,8 +10,12 @@ flags = tf.flags
 flags.DEFINE_string("data_dir", None, "Directory to store datasets.")
 FLAGS = flags.FLAGS
 
-def get_uci_power_dataset(split="train", shuffle_files=False):
+def get_uci_power_dataset(split, shuffle_files=False):
   return get_uci_dataset("power", split=split)
+
+def get_uci_gas_dataset(split, shuffle_files=False):
+  return get_uci_dataset("gas", split=split)
+
 
 def get_uci_dataset(dataset_name, split="train"):
   path = os.path.join(FLAGS.data_dir, "data","processed", dataset_name, "%s.npy" % split)
@@ -142,6 +146,10 @@ def get_dataset(dataset,
       "power": (get_uci_power_dataset, {
           "preprocess": False,
       }),
+      "gas": (get_uci_gas_dataset, {
+          "preprocess": False,
+      }),
+
       #"jittered_celeba": (get_celeba, {
       #    "jitter": True
       #}),
