@@ -60,6 +60,6 @@ class AEMSSM(object):
     return loss
 
   def sample(self, num_samples=1):
-    energy_fn = lambda x: self.log_energy(x, summarize=False)
+    energy_fn = lambda x: -self.log_energy(x, summarize=False)
     samples = utils.hmc(energy_fn, self.data_mean, num_samples=num_samples)
     return samples
