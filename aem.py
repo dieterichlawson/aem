@@ -124,7 +124,7 @@ def make_density_image_summary(num_pts, bounds, model):
   XY = tf.reshape(tf.stack([X,Y], axis=-1), [num_pts**2, 2])
   tf_viridis = lambda x: tf.py_func(cm.get_cmap('viridis'), [x], [tf.float64])
   if FLAGS.model == "aem":
-    log_p_hat, log_q = model.log_p(XY, num_importance_samples=100, summarize=False)
+    log_p_hat, log_q = model.log_p(XY, num_importance_samples=FLAGS.num_importance_samples, summarize=False)
     density_p = tf.reshape(tf.exp(log_p_hat), [num_pts, num_pts])
     density_p = (density_p - tf.reduce_min(density_p))/(tf.reduce_max(density_p) -
             tf.reduce_min(density_p))
@@ -139,7 +139,7 @@ def make_density_image_summary(num_pts, bounds, model):
     tf.summary.image("q_density", density_q_plot, max_outputs=1, 
             collections=["infrequent_summaries"])
   elif FLAGS.model == "eim":
-    log_p_hat = model.log_p(XY, num_importance_samples=100, summarize=False)
+    log_p_hat = model.log_p(XY, num_importance_samples=FLAGS.num_importance_samples, summarize=False)
     density_p = tf.reshape(tf.exp(log_p_hat), [num_pts, num_pts])
     density_p = (density_p - tf.reduce_min(density_p))/(tf.reduce_max(density_p) -
             tf.reduce_min(density_p))
@@ -268,7 +268,7 @@ def main(unused_argv):
       loss = model.loss(data, summarize=True)
       tf.summary.scalar("loss", loss)
 
-      if "mnist" in FLAGS.target and FLAGS.model in ["aem", "eim", "aem_ssm"]:
+      if "mnist" in FLAGS.target and FLAGS.model in ["aem", "eim", "aem_ssm", "aem_arsm", "energy_resnet_ssm"]:
         sample = model.sample(num_samples=4)
         sample = tf.reshape(sample, [4, 28, 28, 1])
         tf.summary.image("sample", sample, max_outputs=4, 

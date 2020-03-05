@@ -71,6 +71,13 @@ class EnergyResnetSSM(object):
     loss = tf.reduce_mean(utils.ssm(log_energy, x, num_v=self.num_v))
     return loss
 
+  def sample(self, num_samples=1):
+    energy_fn = lambda x: -self.log_energy(x, summarize=False)
+    #samples = utils.hmc(energy_fn, self.data_mean, step_size=0.016, thinning_steps=100, num_samples=num_samples)
+    samples = utils.langevin(energy_fn, self.data_mean, step_size=0.1,
+                             thinning_steps=1000, burn_in=1000, num_samples=num_samples)
+    return samples
+
 class GaussianSSM(object):
   
   def __init__(self,

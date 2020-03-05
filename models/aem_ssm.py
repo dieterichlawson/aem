@@ -61,5 +61,7 @@ class AEMSSM(object):
 
   def sample(self, num_samples=1):
     energy_fn = lambda x: -self.log_energy(x, summarize=False)
-    samples = utils.hmc(energy_fn, self.data_mean, num_samples=num_samples)
+    #samples = utils.hmc(energy_fn, self.data_mean, step_size=0.016, thinning_steps=100, num_samples=num_samples)
+    samples = utils.langevin(energy_fn, self.data_mean, step_size=1.0, 
+                             thinning_steps=1000, burn_in=1000, num_samples=num_samples)
     return samples

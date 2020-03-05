@@ -93,17 +93,17 @@ def est_hess_trace_while2(y, x, num_v=1):
   return estimate
 
 
-def hmc(energy_fn, init_X, L=20, step_size=1.0, burn_in=100, num_samples=1000, max_steps=None):
+def hmc(energy_fn, init_X, L=20, step_size=1.0, burn_in=100, num_samples=1000, thinning_steps=1, max_steps=None):
 
   samples = tf.TensorArray(init_X.dtype, 
-                           size=num_samples, 
+                           size=num_samples*thinning_steps, 
                            dynamic_size=False, 
                            name='samples_ta')
   init_X = init_X[tf.newaxis,:] 
   X_shape = tf.shape(init_X)
   
   if max_steps == None:
-    max_steps = 1000*num_samples
+    max_steps = 1000*num_samples*thinning_steps
 
   def hmc_step(i, num_accepted, q, samples):
     # Sample momentum variables as standard Gaussians.
@@ -130,21 +130,73 @@ def hmc(energy_fn, init_X, L=20, step_size=1.0, burn_in=100, num_samples=1000, m
    
     accept = tf.random.uniform([]) < tf.exp(init_U - proposed_U + init_K - proposed_K)
     accept_samples = tf.logical_and(accept, i > burn_in)
-    samples = tf.cond(accept, lambda: samples.write(num_accepted, q), lambda: samples)
+    samples = tf.cond(accept_samples, lambda: samples.write(num_accepted, q), lambda: samples)
+    accept_samples = tf.squeeze(accept_samples)
     q = tf.cond(accept, lambda: q, lambda: init_q)
-    accept = tf.squeeze(accept)
-    return i+1, num_accepted + tf.to_int32(accept), q, samples
+    return i+1, num_accepted + tf.to_int32(accept_samples), q, samples
     
   def hmc_predicate(i, num_accepted, unused_q, unused_samples):
     return tf.logical_and(tf.less(i, burn_in + max_steps), 
-                          tf.less(num_accepted, num_samples))
+                          tf.less(num_accepted, num_samples*thinning_steps))
   
   results = tf.while_loop(hmc_predicate,
                           hmc_step,
                           (0, 0, init_X, samples), back_prop=False)
+  #[num_samples, data_dim]
+  samples = results[-1].stack()
+  samples = tf.reshape(samples, [num_samples, thinning_steps,-1])
+  samples = samples[:,-1,:] 
+
   num_steps = results[0]
   num_accepted = results[1]
   accept_ratio = num_accepted / (num_steps - burn_in)
-  tf.summary.scalar("acceptance ratio", accept_ratio)
+  tf.summary.scalar("acceptance_ratio", accept_ratio)
   tf.summary.scalar("num_hmc_steps", num_steps - burn_in)
-  return results[-1].stack()
+  return samples
+
+
+def langevin(energy_fn, init_X, step_size=1.0, burn_in=100, num_samples=1000, thinning_steps=1, max_steps=None):
+
+  samples = tf.TensorArray(init_X.dtype, 
+                           size=num_samples*thinning_steps, 
+                           dynamic_size=False, 
+                           name='samples_ta')
+  init_X = init_X[tf.newaxis,:] 
+  X_shape = tf.shape(init_X)
+  
+  if max_steps == None:
+    max_steps = 1000*num_samples*thinning_steps
+
+  def langevin_step(i, num_accepted, X, samples):
+    # Compute initial kinetic and potential energies.
+    grad_X = tf.gradients(energy_fn(X), X)[0]
+    
+    new_X = X + step_size*grad_X + tf.math.sqrt(2*step_size)*tf.random.normal(X_shape)
+   
+    new_X = tf.debugging.check_numerics(new_X, "Nans in X.")
+   
+    accept = tf.squeeze(i > burn_in)
+    samples = tf.cond(accept, lambda: samples.write(num_accepted, new_X), lambda: samples)
+    new_X = tf.cond(accept, lambda: new_X, lambda: X)
+    return i+1, num_accepted + tf.to_int32(accept), new_X, samples
+    
+  def langevin_predicate(i, num_accepted, unused_X, unused_samples):
+    # We're not done as long as we haven't gone over the max number of steps
+    # and we haven't accepted enough samples.
+    return tf.logical_and(tf.less(i, burn_in + max_steps), 
+                          tf.less(num_accepted, num_samples*thinning_steps))
+  
+  results = tf.while_loop(langevin_predicate,
+                          langevin_step,
+                          (0, 0, init_X, samples), back_prop=False)
+  #[num_samples, data_dim]
+  samples = results[-1].stack()
+  samples = tf.reshape(samples, [num_samples, thinning_steps,-1])
+  samples = samples[:,-1,:] 
+
+  num_steps = results[0]
+  num_accepted = results[1]
+  accept_ratio = num_accepted / (num_steps - burn_in)
+  #tf.summary.scalar("acceptance_ratio", accept_ratio)
+  #tf.summary.scalar("num_langevin_steps", num_steps - burn_in)
+  return samples
