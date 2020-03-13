@@ -1,6 +1,9 @@
 import os
+import io
 import numpy as np
 from matplotlib import cm
+import matplotlib.pyplot as plt
+import matplotlib.pyplot as plt
 import functools
 
 import tensorflow.compat.v1 as tf
@@ -54,6 +57,8 @@ tf.app.flags.DEFINE_integer("batch_size", 256,
                              "The number of examples per batch.")
 tf.app.flags.DEFINE_integer("density_num_bins", 50,
                             "Number of points per axis when plotting density.")
+tf.app.flags.DEFINE_boolean("sample_hist_2d", True,
+                            "Whether to make a 2d sample histogram.")
 tf.app.flags.DEFINE_string("tag", "aem",
                             "Name for the run.")
 tf.app.flags.DEFINE_string("logdir", "/tmp/aem",
@@ -118,6 +123,31 @@ def make_log_hooks(global_step, loss, logdir):
     hooks.append(infrequent_summary_hook)
   return hooks
 
+def plot_hist_np(samples):
+  """Converts the matplotlib plot specified by 'figure' to a PNG image and
+  returns it. The supplied figure is closed and inaccessible after this call."""
+  figure = plt.figure()
+  plt.hist2d(samples[:,0], samples[:,1], bins=100)
+  # Save the plot to a PNG in memory.
+  buf = io.BytesIO()
+  plt.savefig(buf, format='png')
+  # Closing the figure prevents it from being displayed directly inside
+  # the notebook.
+  plt.close(figure)
+  buf.seek(0)
+  # Convert PNG buffer to TF image
+  image = tf.image.decode_png(buf.getvalue(), channels=4)
+  # Add the batch dimension
+  image = tf.expand_dims(image, 0)
+  return image
+
+def make_2d_sample_plot(num_pts, model):
+  tf_plot_hist_2d = lambda x: tf.py_func(plot_hist_np, [x], [tf.uint8])
+  samples = model.sample(num_samples=10000)
+  im = tf.reshape(tf_plot_hist_2d(samples), [1,480,640,4])
+  tf.summary.image("sample_hist", im, max_outputs=1, 
+            collections=["infrequent_summaries"])
+  
 def make_density_image_summary(num_pts, bounds, model):
   x = tf.range(bounds[0], bounds[1], delta=(bounds[1]-bounds[0])/float(num_pts))
   X, Y = tf.meshgrid(x, x)
@@ -276,6 +306,9 @@ def main(unused_argv):
       
       if FLAGS.target in dists.TARGET_DISTS:
         make_density_image_summary(FLAGS.density_num_bins, (-2,2), model)
+  
+      if FLAGS.sample_hist_2d and FLAGS.target in dists.TARGET_DISTS:
+        make_2d_sample_plot(FLAGS.density_num_bins, model)
 
       learning_rate = tf.train.cosine_decay(FLAGS.learning_rate, 
               global_step, FLAGS.max_steps, name=None)

@@ -99,7 +99,7 @@ def hmc(energy_fn, init_X, L=20, step_size=1.0, burn_in=100, num_samples=1000, t
                            size=num_samples*thinning_steps, 
                            dynamic_size=False, 
                            name='samples_ta')
-  init_X = init_X[tf.newaxis,:] 
+  #init_X = init_X[tf.newaxis,:] 
   X_shape = tf.shape(init_X)
   
   if max_steps == None:
@@ -161,7 +161,7 @@ def langevin(energy_fn, init_X, step_size=1.0, burn_in=100, num_samples=1000, th
                            size=num_samples*thinning_steps, 
                            dynamic_size=False, 
                            name='samples_ta')
-  init_X = init_X[tf.newaxis,:] 
+  #init_X = init_X[tf.newaxis,:] 
   X_shape = tf.shape(init_X)
   
   if max_steps == None:
