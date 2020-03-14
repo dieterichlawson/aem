@@ -17,6 +17,7 @@ import models.eim as eim
 import models.aem_ssm as aem_ssm
 import models.aem_arsm as aem_arsm
 import models.resnet_ssm as resnet_ssm
+import models.arm as arm
 import models.base as base
 
 TARGETS = dists.TARGET_DISTS + ["dynamic_mnist", "raw_mnist", "jittered_mnist", "power", "gas"]
@@ -27,7 +28,7 @@ tf.app.flags.DEFINE_enum("target", dists.NINE_GAUSSIANS_DIST,  TARGETS,
 tf.app.flags.DEFINE_enum("split", "train", ["train", "valid", "test"], "Split to use.")
 tf.app.flags.DEFINE_enum("model", "aem",  
                           ["aem", "eim", "aem_ssm", "energy_resnet_ssm", "score_resnet_ssm",
-                           "aem_arsm", "gaussian_ssm"],
+                           "aem_arsm", "gaussian_ssm", "bernoulli_arm"],
                          "Model to train.")
 tf.app.flags.DEFINE_enum("activation", "tanh", ["relu", "tanh", "sigmoid"],
                          "Activation function to use for the networks.")
@@ -82,7 +83,7 @@ def make_slug():
       ("target", FLAGS.target),
       ("lr", FLAGS.learning_rate),
       ("bs", FLAGS.batch_size)]
-  if FLAGS.model in ["aem", "eim", "aem_ssm", "aem_arsm"]:
+  if FLAGS.model in ["aem", "eim", "aem_ssm", "aem_arsm", "bernoulli_arm"]:
     d.extend([
         ("cdim", FLAGS.context_dim),
         ("arnn_act", FLAGS.arnn_activation),
@@ -292,13 +293,24 @@ def main(unused_argv):
                 activation=enn_activation,
                 data_mean=mean,
                 num_v=1)
+      elif FLAGS.model == "bernoulli_arm":
+        model = arm.BernoulliARM(data_dim,
+                        arnn_num_hidden_units=FLAGS.arnn_num_hidden_units, 
+                        arnn_num_res_blocks=FLAGS.arnn_num_res_blocks, 
+                        context_dim=FLAGS.context_dim, 
+                        enn_num_hidden_units=FLAGS.enn_num_hidden_units, 
+                        enn_num_res_blocks=FLAGS.enn_num_res_blocks, 
+                        enn_activation=enn_activation,
+                        arnn_activation=arnn_activation,
+                        data_mean=mean)
       elif FLAGS.model == "gaussian_ssm":
         model = resnet_ssm.GaussianSSM(data_dim)
 
       loss = model.loss(data, summarize=True)
       tf.summary.scalar("loss", loss)
 
-      if "mnist" in FLAGS.target and FLAGS.model in ["aem", "eim", "aem_ssm", "aem_arsm", "energy_resnet_ssm"]:
+      if "mnist" in FLAGS.target and FLAGS.model in ["aem", "eim", "aem_ssm", "aem_arsm",
+              "energy_resnet_ssm", "bernoulli_arm"]:
         sample = model.sample(num_samples=4)
         sample = tf.reshape(sample, [4, 28, 28, 1])
         tf.summary.image("sample", sample, max_outputs=4, 
